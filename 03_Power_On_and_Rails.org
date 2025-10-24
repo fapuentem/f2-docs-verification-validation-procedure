@@ -1,0 +1,148 @@
+#+TITLE: Power-On & Rails Verification — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente M.
+#+DATE: <2025-10-24>
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:Power:Rails:Acceptance:
+
+* Purpose
+Power up the board with current-limited supply and verify the presence, values, and basic sequencing of primary rails. Confirm that no components overheat and that power-good signals assert as expected.
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Jetson Orin NX SOM installed (note SKU)
+- Applies after [[file:02_Power_Sanity.org][02_Power_Sanity]] has *passed*
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:  
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number: 
+:Lot/WO:        
+:Operator:      
+:Bench-PSU:     
+:DATE:          2025-10-24
+:END:
+
+* Safety & ESD
+- [ ] ESD strap connected, mat grounded
+- [ ] Current limit set on bench PSU
+- [ ] Heatsink installed on SOM if required by spec
+- [ ] Keep scope/DMM grounds secure; avoid ground loops
+
+* Required Equipment
+- Bench PSU with adjustable current limit
+- DMM (voltage and continuity)
+- Oscilloscope (optional, for sequencing and ripple)
+- IR thermometer or finger-touch thermal check (brief)
+
+* Acceptance Criteria (summary)
+- Inrush does not trip PSU OCP; steady-state current within expected range
+- Primary rails within ±5% of spec (unless otherwise designed)
+- Power-good (PG) lines assert; no repeated cycling
+- No part is too hot to touch (~>60–70°C) within the first minute at idle
+
+* Setup
+1. Disconnect all nonessential peripherals (USB devices, cameras, etc.).
+2. Set bench PSU voltage to nominal VIN (per board spec) and set current limit to a cautious value (e.g., ~= 1.2–1.5× expected idle=).
+3. Connect scope/DMM grounds at a single, solid ground point near input.
+4. Prepare to record current and rail measurements.
+
+* Initial Power-On
+- [ ] Enable bench PSU output (note any inrush behavior and current peak).
+- [ ] Confirm no audible noise, smoke, or odor.
+- [ ] Observe steady-state input current after ~10–20 s.
+
+** Input Current
+| Condition                  | Current | Units | Notes |
+|----------------------------+---------+-------+-------|
+| Idle after boot (no load)  |         | A     |       |
+| Peak at power-on (approx.) |         | A     |       |
+
+* Rail Measurements
+Measure DC values with DMM at labeled test points (TPs) or bulk caps. Add scope captures for ripple/sequencing if available.
+
+** DC Levels
+| Rail/Test Point |   Spec | Measured | Units | Pass? | Notes |
+|-----------------+--------+----------+-------+-------+-------|
+| +5V_SYS         |   5.00 |          | V     |       |       |
+| +3V3_SYS        |   3.30 |          | V     |       |       |
+| +1V8            |   1.80 |          | V     |       |       |
+| +1V2            |   1.20 |          | V     |       |       |
+| +VDD_CPU/GPU    | per DT |          | V     |       |       |
+| +VDD_Modem      |    TBD |          | V     |       |       |
+| Other: ________   |        |          |       |       |       |
+
+** Optional: Ripple / Sequencing (Scope)
+Capture power-good and rail ramp if you need to verify order and timing.
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+#+CAPTION: Example—PG/enable timing diagram (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/pg_sequence_timing.png]]
+
+* Power-Good (PG) and Enables
+Document PG/enable status. If available, probe the corresponding test pads or read via GPIO/I²C status registers.
+
+| Signal / Node | Expected | Observed | Pass? | Notes |
+|---------------+----------+----------+-------+-------|
+| PG_5V         | High     |          |       |       |
+| PG_3V3        | High     |          |       |       |
+| PG_1V8        | High     |          |       |       |
+| EN_SOM        | High     |          |       |       |
+| Other: ________ |          |          |       |       |
+
+* Thermal Check (Quick)
+- [ ] Touch/IR check: no device uncomfortably hot at idle (brief touch test)
+- [ ] VRMs and inductors warm but stable; no runaway heating
+
+** Notes
+List any hotspots and attach photos with thermal readings if available.
+
+#+CAPTION: Optional—thermal image or photo
+#+ATTR_ORG: :width 800
+[[file:evidence/thermal_check.jpg]]
+
+* (Optional) Babel Aids
+** Log input current via INA/PMIC (if present)
+If the board exposes current sensors under sysfs or I²C, this snippet logs a few samples. Update paths as needed.
+
+#+BEGIN_SRC bash :results output :exports both
+# Example paths—update for your platform if you have INA3221/PMIC rails exposed
+for n in /sys/class/hwmon/hwmon*/curr*_input; do
+  [ -f "$n" ] || continue
+  echo "$(date +%F_%T) $n: $(cat "$n") uA"
+done | head -n 20
+#+END_SRC
+
+** Quick voltage readback (if rails are exposed via sysfs)
+#+BEGIN_SRC bash :results output :exports both
+for n in /sys/class/hwmon/hwmon*/in*_input; do
+  [ -f "$n" ] || continue
+  echo "$(date +%F_%T) $n: $(cat "$n") mV"
+done | head -n 20
+#+END_SRC
+
+* Findings Log (NCR)
+| ID | Area  | Ref (TP/IC) | Severity | Description | Evidence | Action | Status |
+|----+-------+-------------+----------+-------------+----------+--------+--------|
+|  1 | Power |             | Major    |             |          |        | Open   |
+
+Severity legend: =Critical= (damage risk), =Major= (function risk), =Minor= (cosmetic/process).
+
+* Disposition
+- [ ] PASS — proceed to [[file:04_Boot_and_Console.org][04_Boot_and_Console]]
+- [ ] FAIL — hold for rework/RMA and re-test
+
+* Sign-off
+| Role        | Name           | Date       | Signature |
+|-------------+----------------+------------+-----------|
+| Operator    |                |            |           |
+| QA Reviewer |                |            |           |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]]  |  [[file:04_Boot_and_Console.org][Next: Boot & Console]]

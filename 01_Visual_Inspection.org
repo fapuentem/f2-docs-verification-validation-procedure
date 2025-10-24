@@ -1,0 +1,104 @@
+#+TITLE: Visual Inspection — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente Mansilla
+#+DATE: <2025-10-24 Fri>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:VisualInspection:Acceptance:
+
+* Purpose
+Verify manufacturing and assembly quality of the F2SC01 carrier board
+*before any power is applied*. This step screens for mechanical,
+assembly, and workmanship issues that could cause failures during
+bring-up.
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Production, pilot, or RMA boards
+- Inspection class: Production QA (record deviations below)
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:  
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number: 
+:Lot/WO:        
+:Inspector:     
+:Location:      
+:DATE:          2025-10-24
+:END:
+
+* Safety & ESD
+- [ ] ESD wrist strap connected and tested
+- [ ] ESD-safe surface/mat
+- [ ] Handle by edges; avoid heatsink interface surfaces and RF connectors
+
+* Required Tools
+- Good lighting + inspection microscope (≥10× recommended)
+- DMM (continuity only for this step, no power applied)
+- Torque driver for standoffs (if applicable)
+- Camera/phone for evidence
+
+* Acceptance Criteria (summary)
+- No visible mechanical damage or missing/incorrect parts
+- Proper polarity/orientation of polarized components and connectors
+- Solder joints smooth, shiny, and fully wetted; no bridges or opens
+- Cleanliness acceptable; no conductive debris or severe flux residues
+- Labels/barcodes present and legible
+
+* Identification & Markings
+- [ ] PCB revision printed matches expected BOM/ECN
+- [ ] Board serial label present and readable
+- [ ] Date code / lot code present
+- [ ] Polarity and pin‑1 indicators visible for ICs, diodes, electrolytics
+- [ ] Orientation keying for M.2, JST, headers correct
+
+* Mechanical Assembly
+- [ ] Connectors aligned (no leaning/tilt beyond tolerance)
+- [ ] Mounting holes unobstructed; plating undamaged
+- [ ] RF connectors (U.FL/MMCX) intact; no lifted pads
+
+* Solder Quality
+- [ ] No bridges, cold joints, voids, or insufficient solder
+- [ ] QFN/BGA periphery fillets acceptable; no solder balls nearby
+- [ ] Through‑hole joints with proper fill; wetting on lead and pad
+
+* Connectors & Interfaces
+- [ ] M.2 sockets undamaged; keys not deformed
+- [ ] USB mechanically solid; shield tabs soldered
+- [ ] Test points accessible and labeled
+
+* Cleanliness & Coatings
+- [ ] No metal shavings or foreign objects
+- [ ] Flux residues minimal; no sticky surfaces near high‑impedance nets
+- [ ] Conformal coat (if used) uniform; keep‑out zones respected
+
+* Photo Evidence
+Attach photos in =evidence/= and link them here.
+- [ ] Top overview :: [[file:evidence/top_overview.jpg]]
+- [ ] Bottom overview :: [[file:evidence/bottom_overview.jpg]]
+- [ ] Fine‑pitch ICs :: [[file:evidence/fine_pitch_ic.jpg]]
+- [ ] M.2 :: [[file:evidence/m2_rf_area.jpg]]
+- [ ] Any rework :: [[file:evidence/rework_closeup.jpg]]
+
+* Findings Log
+Record any nonconformities (NCR). Use severity to aid disposition.
+| ID | Area | RefDes / Zone | Severity | Description | Evidence              | Action | Status |
+|----+------+---------------+----------+-------------+-----------------------+--------+--------|
+|  1 |      |               | Critical |             | [[file:evidence/xxx.jpg]] |        | Open   |
+
+Severity legend: =Critical= (safety/damage risk), =Major= (function risk), =Minor= (cosmetic).
+
+* Disposition
+- [ ] PASS — proceed to *02_Power_Sanity*
+- [ ] FAIL — hold for rework/RMA
+
+* Sign‑off
+| Role        | Name | Date | Signature |
+|-------------+------+------+-----------|
+| Inspector   |      |      |           |
+| QA Reviewer |      |      |           |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]]

@@ -1,0 +1,104 @@
+#+TITLE: Power Sanity (Pre-Power) — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente Mansilla
+#+DATE: <2025-10-24 Fri>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:Power:PrePower:Acceptance:
+
+* Purpose
+Screen for gross electrical issues *before any power is applied*. The goal is to catch shorts, assembly errors, and missing protection components that could damage the board or bench supply during first power-on.
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Boards from production, pilot, or RMA
+- Applies to VIN path, input protection, and primary DC/DC inputs
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:  
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number: 
+:Lot/WO:        
+:Operator:      
+:Bench-PSU:     
+:DATE:          2025-10-24
+:END:
+
+* Safety & Electrostatic Discharge (ESD)
+- [ ] ESD strap connected, mat grounded
+- [ ] No modules or peripherals attached (5G modem, NVMe, Wi-Fi card, Jetson Orin NX or other M.2 cards)
+- [ ] Digital multimeter (DMM) continuity/ohms mode only; *do not* inject power from DMM
+- [ ] Avoid probing small RF parts
+
+* Required Equipment
+- Digital multimeter (DMM) with continuity/diode/ohms modes
+- Bench Power supply unit (PSU) with adjustable current limit (leave *off* for this step)
+- ESD accessories
+- [[https://drive.google.com/drive/folders/1JVN5esHxpJAKt_KkhkdePhA0U1uXdHZs?usp=drive_link][Board documentation / schematic references (TP list if available)]]
+
+* Acceptance Criteria (summary)
+- VIN↔GND resistance is *not* a hard short; within expected range for populated caps
+- Polarity protection elements (ideal diode/ORing or reverse diode) present and oriented
+- No short on primary rails (5V, 3V3, 1V8, etc.) as seen from their bulk inputs
+
+* Procedure
+
+** VIN–GND resistance screen (no power)
+- Using DMM ~Ω~ mode, measure resistance between *VIN+* and *GND (J5)*.
+- Expectation: typically =1–200 kΩ= (capacitors may charge; reading rises).
+- If you measure < ~5 kΩ steady, investigate before proceeding.
+
+*** Record
+| Item               | Value | Units | Notes                             |
+|--------------------+-------+-------+-----------------------------------|
+| VIN–GND resistance |       | kΩ    | Meter settles after a few seconds |
+
+** Primary rail input shorts (no power)
+Probe at the bulk input caps of each converter (or labeled TPs). Record low-ohms red flags.
+- [ ] +5V path (TP1, TP57, and TP48) not shorted to GND
+- [ ] +3V3 path (TP58, TP51) not shorted to GND
+- [ ] +3V8 path (TP31) not shorted to GND
+- [ ] +1V8 path (TP30, and TP61) not shorted to GND
+- [ ] Any always-on rail (TP59) not shorted to GND
+
+*** Record
+| Rail / Node    | Resistance | Units | Pass? | Notes |
+|----------------+------------+-------+-------+-------|
+| +5V input cap  |            | kΩ    |       |       |
+| +3V3 input cap |            | kΩ    |       |       |
+| +1V8 input cap |            | kΩ    |       |       |
+| Other: ________  |            | kΩ    |       |       |
+|                |            |       |       |       |
+
+
+** Current limit planning (for next step)
+Set a conservative current limit on the bench PSU for initial power-on.
+Suggested rule of thumb: ~=I_idle x 1.5=~ (or as per board spec).
+
+*** Plan
+| Parameter                 | Value | Units | Notes          |
+|---------------------------+-------+-------+----------------|
+| Expected idle current     |       | A     | With SOM only  |
+| Initial PSU current limit |       | A     | 1.2–1.5 × idle |
+
+* Findings Log (NCR)
+| ID | Area | Reference (TP/RefDes) | Severity | Description | Evidence | Action | Status |
+|----+------+-----------------------+----------+-------------+----------+--------+--------|
+|  1 |      |                       | Major    |             |          |        | Open   |
+
+Severity legend: =Critical= (damage likely), =Major= (function at risk), =Minor= (cosmetic/process).
+
+* Disposition
+- [ ] PASS — proceed to [[file:03_Power_On_and_Rails.org][03_Power_On_and_Rails]]
+- [ ] FAIL — hold for rework/RMA and re-test
+
+* Sign-off
+| Role        | Name           | Date       | Signature |
+|-------------+----------------+------------+-----------|
+| Operator    |                |            |           |
+| QA Reviewer |                |            |           |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]]  |  [[file:03_Power_On_and_Rails.org][Next: Power-On & Rails]]
