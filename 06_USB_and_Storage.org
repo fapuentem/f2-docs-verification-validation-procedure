@@ -1,0 +1,106 @@
+#+TITLE: USB & Storage — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente M.
+#+DATE: <2025-10-27 Mon>
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:USB:Storage:NVMe:SD:
+
+* Purpose
+Verify that all USB ports and storage interfaces on the F2SC01 carrier board
+are correctly detected at the hardware and system levels.
+Ensure that enumeration, throughput, and device mounting behave as expected.
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Jetson Orin NX SOM
+- Applies after [[file:05_Networking.org][05_Networking]] has *passed*.
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number:
+:Lot/WO:
+:Operator:
+:DATE:
+:END:
+
+* Acceptance Criteria
+- All USB host ports detected (USB2, USB3)
+- Connected devices enumerate without kernel errors
+- NVMe storage visible as block device
+- No overcurrent or “USB disconnect” errors under load
+
+* Hardware Detection — Kernel & Topology
+** dmesg summary (USB / storage)
+#+BEGIN_SRC bash :results output :exports both
+  sudo dmesg -T | egrep -i "usb|xhci|storage|sdhci|nvme|mmc|scsi|block|mount" | tail -n 200
+#+END_SRC
+
+** USB tree view
+#+BEGIN_SRC bash :results output :exports both
+  echo "### USB Device Tree"
+  lsusb -t || true
+  echo
+  echo "### USB Devices"
+  lsusb || true
+#+END_SRC
+
+** PCIe / NVMe enumeration
+#+BEGIN_SRC bash :results output :exports both
+  echo "### NVMe controllers:"
+  lspci -nn | egrep "Non-Volatile memory controller|Mass storage" || true
+  ls /dev/nvme* 2>/dev/null || echo "No NVMe block device found."
+#+END_SRC
+
+* USB Port Enumeration
+** Check logical devices
+#+BEGIN_SRC bash :results output :exports both
+  ip -br link show | grep usb || true
+  ls /sys/bus/usb/devices/usb* -d
+#+END_SRC
+
+** USB serial devices (if applicable)
+#+BEGIN_SRC bash :results output :exports both
+  dmesg | grep ttyUSB || true
+  ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true
+#+END_SRC
+
+* NVMe / Internal Storage
+** Identify NVMe drives
+#+BEGIN_SRC bash :results output :exports both
+  nvme list 2>/dev/null || lsblk -o NAME,MODEL,SIZE,TYPE | grep nvme || true
+#+END_SRC
+
+** Measure NVMe performance (optional)
+#+BEGIN_SRC bash :results output :exports both
+  sudo hdparm -tT /dev/nvme0n1 2>/dev/null || echo "hdparm not installed"
+#+END_SRC
+
+** Verify partitions and mounts
+#+BEGIN_SRC bash :results output :exports both
+  lsblk -o NAME,FSTYPE,LABEL,SIZE,MOUNTPOINT | grep nvme || true
+  df -h | grep nvme || true
+#+END_SRC
+
+* Evidence
+- Save =dmesg= output and =lsusb -t= tree to =evidence/usb_storage/=
+- Record storage results (NVMe, SD) and attach screenshots or log snippets.
+
+* Troubleshooting
+- *No USB enumeration:* check 5V VBUS and ground continuity; inspect dmesg for “overcurrent” or “link never came up.”
+- *Unstable USB:* verify cable quality and shielding.
+
+* Disposition
+- [ ] PASS — proceed to [[file:07_PCIe_and_Modems.org][07 PCIe & Modems]]
+- [ ] FAIL — hold for rework/RMA and re-test
+
+* Sign-off
+| Role        | Name | Date | Signature |
+|-------------+------+------+-----------|
+| Operator    |      |      |           |
+| QA Reviewer |      |      |           |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]] | [[file:07_PCIe_and_Modems.org][Next: PCIe & Modems]]

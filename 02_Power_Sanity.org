@@ -7,7 +7,7 @@
 #+FILETAGS: :F2:CarrierBoard:VnV:Power:PrePower:Acceptance:
 
 * Purpose
-Screen for gross electrical issues *before any power is applied*. The goal is to catch shorts, assembly errors, and missing protection components that could damage the board or bench supply during first power-on.
+Screen for gross electrical issues *before any power is applied*. The goal is to catch shorts, and assembly errors that could damage the board or bench supply during first power-on.
 
 * Scope
 - PCB revision ~v3.1.x~ (or as specified)
@@ -36,11 +36,10 @@ Screen for gross electrical issues *before any power is applied*. The goal is to
 - Digital multimeter (DMM) with continuity/diode/ohms modes
 - Bench Power supply unit (PSU) with adjustable current limit (leave *off* for this step)
 - ESD accessories
-- [[https://drive.google.com/drive/folders/1JVN5esHxpJAKt_KkhkdePhA0U1uXdHZs?usp=drive_link][Board documentation / schematic references (TP list if available)]]
+- [[https://drive.google.com/drive/folders/1JVN5esHxpJAKt_KkhkdePhA0U1uXdHZs?usp=drive_link][Board documentation / schematic references]]
 
 * Acceptance Criteria (summary)
 - VIN↔GND resistance is *not* a hard short; within expected range for populated caps
-- Polarity protection elements (ideal diode/ORing or reverse diode) present and oriented
 - No short on primary rails (5V, 3V3, 1V8, etc.) as seen from their bulk inputs
 
 * Procedure
@@ -57,20 +56,44 @@ Screen for gross electrical issues *before any power is applied*. The goal is to
 
 ** Primary rail input shorts (no power)
 Probe at the bulk input caps of each converter (or labeled TPs). Record low-ohms red flags.
-- [ ] +5V path (TP1, TP57, and TP48) not shorted to GND
-- [ ] +3V3 path (TP58, TP51) not shorted to GND
-- [ ] +3V8 path (TP31) not shorted to GND
-- [ ] +1V8 path (TP30, and TP61) not shorted to GND
-- [ ] Any always-on rail (TP59) not shorted to GND
 
-*** Record
-| Rail / Node    | Resistance | Units | Pass? | Notes |
-|----------------+------------+-------+-------+-------|
-| +5V input cap  |            | kΩ    |       |       |
-| +3V3 input cap |            | kΩ    |       |       |
-| +1V8 input cap |            | kΩ    |       |       |
-| Other: ________  |            | kΩ    |       |       |
-|                |            |       |       |       |
+*** +5V path (TP1, TP57, and TP48) not shorted to GND
+
+| Rail / Node                 | Resistance | Units | Pass? | Notes |
+|-----------------------------+------------+-------+-------+-------|
+| +5V input cap (TP1 - GND)   |            | kΩ    |       |       |
+| +5V input cap (TP57 - GND)  |            | kΩ    |       |       |
+| +5V input cap (TP48 - GND)  |            | kΩ    |       |       |
+
+
+*** +3V3 path (TP58, TP51) not shorted to GND
+
+| Rail / Node                 | Resistance | Units | Pass? | Notes |
+|-----------------------------+------------+-------+-------+-------|
+| +3V3 input cap (TP58 - GND) |            | kΩ    |       |       |
+| +3V3 input cap (TP51 - GND) |            | kΩ    |       |       |
+
+
+*** +3V8 path (TP31) not shorted to GND
+
+| Rail / Node                 | Resistance | Units | Pass? | Notes |
+|-----------------------------+------------+-------+-------+-------|
+| +3V8 input cap (TP31 - GND) |            | kΩ    |       |       |
+
+
+*** +1V8 path (TP30, and TP61) not shorted to GND
+
+| Rail / Node                 | Resistance | Units | Pass? | Notes |
+|-----------------------------+------------+-------+-------+-------|
+| +1V8 input cap (TP30 - GND) |            | kΩ    |       |       |
+| +1V8 input cap (TP61 - GND) |            | kΩ    |       |       |
+
+
+*** Any always-on rail (TP59) not shorted to GND
+
+| Rail / Node                 | Resistance | Units | Pass? | Notes |
+|-----------------------------+------------+-------+-------+-------|
+| +3V3 input cap (TP59 - GND) |            | kΩ    |       |       |
 
 
 ** Current limit planning (for next step)

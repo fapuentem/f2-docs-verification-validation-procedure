@@ -1,6 +1,7 @@
 #+TITLE: Power-On & Rails Verification — F2 Carrier Board (F2SC01)
 #+AUTHOR: Fabricio Puente M.
 #+DATE: <2025-10-24>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
 #+OPTIONS: toc:t num:t ^:t
 #+PROPERTY: header-args :results output :exports both
 #+FILETAGS: :F2:CarrierBoard:VnV:Power:Rails:Acceptance:
@@ -28,7 +29,7 @@ Power up the board with current-limited supply and verify the presence, values, 
 * Safety & ESD
 - [ ] ESD strap connected, mat grounded
 - [ ] Current limit set on bench PSU
-- [ ] Heatsink installed on SOM if required by spec
+- [ ] Heatsink installed on SOM
 - [ ] Keep scope/DMM grounds secure; avoid ground loops
 
 * Required Equipment
@@ -40,30 +41,29 @@ Power up the board with current-limited supply and verify the presence, values, 
 * Acceptance Criteria (summary)
 - Inrush does not trip PSU OCP; steady-state current within expected range
 - Primary rails within ±5% of spec (unless otherwise designed)
-- Power-good (PG) lines assert; no repeated cycling
 - No part is too hot to touch (~>60–70°C) within the first minute at idle
 
-* Setup
-1. Disconnect all nonessential peripherals (USB devices, cameras, etc.).
+* Setup A
+1. Disconnect all modules or peripherals (5G modem, NVMe, Wi-Fi card, Jetson Orin NX or other M.2 cards).
 2. Set bench PSU voltage to nominal VIN (per board spec) and set current limit to a cautious value (e.g., ~= 1.2–1.5× expected idle=).
 3. Connect scope/DMM grounds at a single, solid ground point near input.
 4. Prepare to record current and rail measurements.
 
-* Initial Power-On
+** Initial Power-On
 - [ ] Enable bench PSU output (note any inrush behavior and current peak).
 - [ ] Confirm no audible noise, smoke, or odor.
 - [ ] Observe steady-state input current after ~10–20 s.
 
-** Input Current
+*** Input Current
 | Condition                  | Current | Units | Notes |
 |----------------------------+---------+-------+-------|
-| Idle after boot (no load)  |         | A     |       |
+| Idle (no load)             |         | A     |       |
 | Peak at power-on (approx.) |         | A     |       |
 
-* Rail Measurements
+** Rail Measurements
 Measure DC values with DMM at labeled test points (TPs) or bulk caps. Add scope captures for ripple/sequencing if available.
 
-** DC Levels
+*** DC Levels
 | Rail/Test Point |   Spec | Measured | Units | Pass? | Notes |
 |-----------------+--------+----------+-------+-------+-------|
 | +5V_SYS         |   5.00 |          | V     |       |       |
@@ -74,58 +74,149 @@ Measure DC values with DMM at labeled test points (TPs) or bulk caps. Add scope 
 | +VDD_Modem      |    TBD |          | V     |       |       |
 | Other: ________   |        |          |       |       |       |
 
-** Optional: Ripple / Sequencing (Scope)
+*** Optional: Ripple / Sequencing (Scope)
 Capture power-good and rail ramp if you need to verify order and timing.
+
+**** TP48 - GND (5.0v)
 
 #+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
 #+ATTR_ORG: :width 800
 [[file:evidence/rails_ripple_capture.png]]
 
-#+CAPTION: Example—PG/enable timing diagram (upload your file to =evidence/= and update link)
+**** TP51 - GND (3.3v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
 #+ATTR_ORG: :width 800
-[[file:evidence/pg_sequence_timing.png]]
+[[file:evidence/rails_ripple_capture.png]]
 
-* Power-Good (PG) and Enables
-Document PG/enable status. If available, probe the corresponding test pads or read via GPIO/I²C status registers.
+**** TP31 - GND (3.8v)
 
-| Signal / Node | Expected | Observed | Pass? | Notes |
-|---------------+----------+----------+-------+-------|
-| PG_5V         | High     |          |       |       |
-| PG_3V3        | High     |          |       |       |
-| PG_1V8        | High     |          |       |       |
-| EN_SOM        | High     |          |       |       |
-| Other: ________ |          |          |       |       |
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
 
-* Thermal Check (Quick)
+**** TP30 - GND (1.8v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP65 - GND (3.3v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP61 - GND (1.8v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP59 - GND (3.3v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+** Thermal Check (Quick)
 - [ ] Touch/IR check: no device uncomfortably hot at idle (brief touch test)
 - [ ] VRMs and inductors warm but stable; no runaway heating
 
-** Notes
+*** Notes
 List any hotspots and attach photos with thermal readings if available.
 
 #+CAPTION: Optional—thermal image or photo
 #+ATTR_ORG: :width 800
 [[file:evidence/thermal_check.jpg]]
 
-* (Optional) Babel Aids
-** Log input current via INA/PMIC (if present)
-If the board exposes current sensors under sysfs or I²C, this snippet logs a few samples. Update paths as needed.
+* Setup B
+1. Plug in all modules or peripherals (5G modem, NVMe, Wi-Fi card, Jetson Orin NX or other M.2 cards).
+2. Set bench PSU voltage to nominal VIN (per board spec) and set current limit to a cautious value (e.g., ~= 1.2–1.5× expected idle=).
+3. Connect scope/DMM grounds at a single, solid ground point near input.
+4. Prepare to record current and rail measurements.
 
-#+BEGIN_SRC bash :results output :exports both
-# Example paths—update for your platform if you have INA3221/PMIC rails exposed
-for n in /sys/class/hwmon/hwmon*/curr*_input; do
-  [ -f "$n" ] || continue
-  echo "$(date +%F_%T) $n: $(cat "$n") uA"
-done | head -n 20
-#+END_SRC
+** Initial Power-On
+- [ ] Enable bench PSU output (note any inrush behavior and current peak).
+- [ ] Confirm no audible noise, smoke, or odor.
+- [ ] Observe steady-state input current after ~10–20 s.
 
-** Quick voltage readback (if rails are exposed via sysfs)
-#+BEGIN_SRC bash :results output :exports both
-for n in /sys/class/hwmon/hwmon*/in*_input; do
-  [ -f "$n" ] || continue
-  echo "$(date +%F_%T) $n: $(cat "$n") mV"
-done | head -n 20
-#+END_SRC
+*** Input Current
+| Condition                  | Current | Units | Notes |
+|----------------------------+---------+-------+-------|
+| Idle (no load)             |         | A     |       |
+| Peak at power-on (approx.) |         | A     |       |
+
+** Rail Measurements
+Measure DC values with DMM at labeled test points (TPs) or bulk caps. Add scope captures for ripple/sequencing if available.
+
+*** DC Levels
+| Rail/Test Point |   Spec | Measured | Units | Pass? | Notes |
+|-----------------+--------+----------+-------+-------+-------|
+| +5V_SYS         |   5.00 |          | V     |       |       |
+| +3V3_SYS        |   3.30 |          | V     |       |       |
+| +1V8            |   1.80 |          | V     |       |       |
+| +1V2            |   1.20 |          | V     |       |       |
+| +VDD_CPU/GPU    | per DT |          | V     |       |       |
+| +VDD_Modem      |    TBD |          | V     |       |       |
+| Other: ________   |        |          |       |       |       |
+
+*** Optional: Ripple / Sequencing (Scope)
+Capture power-good and rail ramp if you need to verify order and timing.
+
+**** TP48 - GND (5.0v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP51 - GND (3.3v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP31 - GND (3.8v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP30 - GND (1.8v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP65 - GND (3.3v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP61 - GND (1.8v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+**** TP59 - GND (3.3v)
+
+#+CAPTION: Example—rails ripple capture (upload your file to =evidence/= and update link)
+#+ATTR_ORG: :width 800
+[[file:evidence/rails_ripple_capture.png]]
+
+** Thermal Check (Quick)
+- [ ] Touch/IR check: no device uncomfortably hot at idle (brief touch test)
+- [ ] VRMs and inductors warm but stable; no runaway heating
+
+*** Notes
+List any hotspots and attach photos with thermal readings if available.
+
+#+CAPTION: Optional—thermal image or photo
+#+ATTR_ORG: :width 800
+[[file:evidence/thermal_check.jpg]]
+
 
 * Findings Log (NCR)
 | ID | Area  | Ref (TP/IC) | Severity | Description | Evidence | Action | Status |

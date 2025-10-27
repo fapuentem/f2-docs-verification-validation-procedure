@@ -1,0 +1,115 @@
+#+TITLE: Boot & Console — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente M.
+#+DATE: <2025-10-27 Mon>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:Boot:Console:Acceptance:
+
+* Purpose
+Verify that the board boots cleanly with the Jetson Orin SOM installed, and that a serial console is available for diagnostics (U-Boot + Linux).
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Jetson Orin NX SOM installed (note SKU)
+- Follows [[file:03_Power_On_and_Rails.org][03_Power_On_and_Rails]] (must be *PASS*)
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number:
+:Lot/WO:
+:Operator:
+:DATE:
+:END:
+
+* Safety & ESD
+- [ ] ESD strap and mat in place
+- [ ] No metal tools on the board while powered
+
+* Required Equipment
+- USB-to-UART adapter (3.3 V logic)
+- Console software: minicom(Linux/macOS), PuTTY/TeraTerm (Windows)
+- USB cable(s) for UART and optional recovery/OTG
+
+* Acceptance Criteria (summary)
+- Serial console opens at *115200 8N1* and shows boot output
+- U-Boot/NVIDIA boot messages visible
+- Linux reaches login without kernel panic
+- Hostname, kernel, and device-tree match expected image
+- SSH reachable when networking is configured
+
+* Setup
+1. Plug in USB terminal cable.
+2. Identify host TTY (=/dev/ttyUSB0=, or Windows COMx).
+3. Ensure current-limited power is applied (see step 03) and heatsink as required.
+
+* Open Serial Console (Linux/macOS)
+
+** Using minicom (with log capture)
+#+BEGIN_SRC bash :results output :exports both
+  PORT=${PORT:-/dev/ttyUSB0}
+  LOG=${LOG:-evidence/boot_minicom.log}
+  mkdir -p "$(dirname "$LOG")"
+  minicom -D "$PORT" -b 115200 -C "$LOG"
+#+END_SRC
+
+* Open Serial Console (Windows)
+** PuTTY
+- Serial → *Speed*: =115200=, *Data*: 8, *Parity*: None, *Stop*: 1, *Flow control*: *None*
+- *Serial line*: =COMx= (Device Manager → Ports)
+
+* Linux Bring-up Checks
+** Confirm kernel, device-tree, rootfs
+#+BEGIN_SRC bash :results output :exports both
+  uname -a
+  sed -n '1,6p' /etc/os-release
+  tr -d '\0' </proc/device-tree/model 2>/dev/null || true
+  dmesg | egrep -i 'boot|error|fail|panic' | tail -n 100 || true
+#+END_SRC
+
+** Verify console and system state
+#+BEGIN_SRC bash :results output :exports both
+  whoami || true
+  id || true
+  systemctl is-system-running || true
+  systemctl --failed || true
+#+END_SRC
+
+* Recovery / Force-Reflash (reference)
+- Put SOM into recovery per NVIDIA docs (REC pin/button + power cycle)
+- Verify on host: =lsusb | grep -i nvidia= shows APX device
+- Use SDK Manager / =flash.sh= as needed (outside scope of this step)
+
+* Evidence
+- Boot logs: ==evidence/boot_minicom.log=
+- Console screenshot(s): [[file:evidence/boot_console.png]]
+- UART wiring photo: [[file:evidence/uart_wiring.jpg]]
+
+* Troubleshooting
+- *No output*: swap TX/RX, check GND, confirm =115200 8N1=, try another USB cable/port
+- *Garbled text*: fix baud/8N1, disable flow control; cable noise
+- *Boot hang/reboot loop*: re-check rails & current limit (see step 03), remove peripherals
+- *No login*: check getty service and user credentials, verify rootfs integrity
+
+* Findings Log (NCR)
+| ID | Area | Reference | Severity | Description | Evidence | Action | Status |
+|----+------+-----------+----------+-------------+----------+--------+--------|
+|  1 | Boot |           | Major    |             |          |        | Open   |
+
+Severity: =Critical= (damage risk), =Major= (function risk), =Minor= (cosmetic/process).
+
+* Disposition
+- [ ] PASS — proceed to [[file:05_Networking.org][05_Networking]]
+- [ ] FAIL — hold for rework/RMA and re-test
+
+* Sign-off
+| Role        | Name | Date | Signature |
+|-------------+------+------ +----------|
+| Operator    |      |       |          |
+| QA Reviewer |      |       |          |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]]  |  [[file:05_Networking.org][Next: Networking]]

@@ -1,0 +1,151 @@
+#+TITLE: Networking (Ethernet / Wi-Fi / WWAN) — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente M.
+#+DATE: <2025-10-27>
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:Networking:Ethernet:WiFi:WWAN:Kernel:Drivers:
+
+* Purpose
+Verify that all network controllers on the F2SC01 are detected by the kernel,
+properly bound to their drivers, and functionally operational.
+
+This includes:
+- *eth0:* external Realtek RTL8111H-CG PCIe
+- *eth1:* internal Jetson Orin NX GbE (EQOS)
+- *wlan0:* Intel AX210 Wi-Fi (PCIe, iwlwifi)
+- *wwan0:* Quectel RM520N-GL 5G modem (USB, qmi_wwan)
+  
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Jetson Orin NX SOM with OS image (NetworkManager typically present)
+- Follows [[file:04_Boot_and_Console.org][04_Boot_and_Console]] (must be *PASS*)
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:  
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number: 
+:Lot/WO:        
+:Operator:      
+:DATE:          2025-10-27
+:END:
+
+* Acceptance Criteria (summary)
+- All four interfaces (eth0, eth1, wlan0, wwan0) visible under =/sys/class/net=
+- Kernel shows device enumeration and firmware load with no critical errors
+- MAC addresses present and unique
+
+* Safety
+- Keep antennas connected for Wi‑Fi/WWAN before transmit
+- Observe regional RF rules when using cellular modules
+  
+* Hardware Detection — Kernel & Drivers
+
+** dmesg summary (network-related)
+#+BEGIN_SRC bash :results output :exports both
+  sudo dmesg -T | egrep -i "eqos|r816|iwlwifi|qmi_wwan|cdc_mbim|firmware|phy|eth|wlan|wwan" | tail -n 200
+#+END_SRC
+
+** PCIe / USB enumeration
+#+BEGIN_SRC bash :results output :exports both
+  echo "### PCIe Devices:"
+  lspci -nn | egrep "Ethernet|Network|Communication" || true
+  echo
+  echo "### USB Tree:"
+  lsusb -t | egrep "Driver|Class" || true
+#+END_SRC
+
+** sysfs inventory
+#+BEGIN_SRC bash :results output :exports both
+  for IF in eth0 eth1 wlan0 wwan0; do
+  echo "## $IF"
+  readlink -f /sys/class/net/$IF/device/driver 2>/dev/null || echo "  (no driver link)"
+  ethtool -i $IF 2>/dev/null | sed '1,6p' || true
+  done
+#+END_SRC
+
+** Driver expectations
+| Interface | Controller/Bus                | Expected Driver | Notes                         |
+|-----------+-------------------------------+-----------------+-------------------------------|
+| eth1      | Jetson Orin NX integrated GbE | eqos            | Provided by L4T               |
+| eth0      | Realtek RTL8111H PCIe         | r8168           | PCIe add-on NIC               |
+| wlan0     | Intel AX210 Wi-Fi             | iwlwifi         | Firmware ty-a0-gf-a0-59.ucode |
+| wwan0     | Quectel RM520N-GL (USB)       | qmi_wwan        | /dev/cdc-wdm0, MHI disabled   |
+
+** Verify devices and firmware
+#+BEGIN_SRC bash :results output :exports both
+  echo "Wi-Fi firmware:"
+  sudo dmesg | grep iwlwifi | grep -i firmware | tail -n 5
+  echo
+  echo "WWAN driver nodes:"
+  ls -l /dev/cdc-wdm* /dev/wwan* 2>/dev/null
+  mmcli -L 2>/dev/null || true
+#+END_SRC
+
+* Interface Overview
+#+BEGIN_SRC bash :results output :exports both
+  ip -br link show | egrep "eth|wlan|wwan"
+#+END_SRC
+
+* Ethernet Validation
+** eth1 – internal EQOS
+#+BEGIN_SRC bash :results output :exports both
+  echo "--- eth1 (Jetson internal) ---"
+  ethtool -i eth1 | head -n 6
+  ethtool eth1 | egrep "Link detected|Speed|Duplex" || true
+  ip -br addr show eth1
+#+END_SRC
+
+** eth0 – external Realtek PCIe
+#+BEGIN_SRC bash :results output :exports both
+  echo "--- eth0 (Realtek PCIe) ---"
+  ethtool -i eth0 | head -n 6
+  ethtool eth0 | egrep "Link detected|Speed|Duplex" || true
+  ip -br addr show eth0
+#+END_SRC
+
+* Wi-Fi Validation (Intel AX210)
+** Scan 
+#+BEGIN_SRC bash :results output :exports both
+  nmcli dev wifi rescan
+  nmcli dev wifi list | head -n 10
+#+END_SRC
+
+** Regulatory and rfkill
+#+BEGIN_SRC bash :results output :exports both
+  rfkill list
+  iw reg get
+#+END_SRC
+
+* WWAN (Quectel RM520N-GL)
+** Check modem enumeration
+#+BEGIN_SRC bash :results output :exports both
+  lsusb | grep -i quectel || true
+  mmcli -L || true
+#+END_SRC
+
+* Evidence
+- Save dmesg excerpts and =ethtool -i= outputs under =evidence/networking/=
+- Optional photos of antenna, SIM tray, and Ethernet LEDs
+- Keep =ping_ifaces_YYYYMMDD.log= as connectivity proof
+
+* Findings Log (NCR)
+| ID | Interface | Severity | Description       | Evidence                                | Status |
+|----+-----------+----------+-------------------+-----------------------------------------+--------|
+|  1 | eth1      | Major    | Link intermittent | [[file:evidence/networking/eth1_dmesg.log]] | Open   |
+
+* Disposition
+- [ ] PASS — proceed to [[file:06_USB_and_Storage.org][06_USB & Storage]]
+- [ ] FAIL — hold for rework or driver debug
+
+* Sign-off
+| Role        | Name | Date | Signature |
+|-------------+------+------+-----------|
+| Operator    |      |      |           |
+| QA Reviewer |      |      |           |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]] | [[file:06_USB_and_Storage.org][Next: USB & Storage]]
+
+
