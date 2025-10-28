@@ -1,0 +1,156 @@
+#+TITLE: PCIe & Modems — F2 Carrier Board (F2SC01)
+#+AUTHOR: Fabricio Puente M.
+#+DATE: <2025-10-27 Mon>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:PCIe:Modem:WWAN:5G:
+
+* Purpose
+Validate that all PCIe devices on the F2SC01 carrier board enumerate properly and operate as expected — including the *Realtek Ethernet controller*, *Intel AX210 Wi-Fi*, *NVMe Memory Kingston Technology*, and *Quectel RM520N-GL 5G modem* (USB via PCIe bridge).
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Jetson Orin NX SOM with F2SC01 carrier running JetPack 5.1.2
+- Test after [[file:06_USB_and_Storage.org][06 USB & Storage]] passes.
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:
+:SOM:           Jetson Orin NX (SKU:    )
+:Serial-Number:
+:Lot/WO:
+:Operator:
+:DATE:
+:END:
+
+* Acceptance Criteria
+- All expected PCIe/USB endpoints appear in kernel logs (~dmesg~, ~lspci~, ~lsusb~)
+- Devices bind to the correct kernel drivers
+- No "link never came up," "AER," or firmware load errors
+- Each detected interface exposes a sysfs node under ~/sys/class/net/~ or ~/sys/bus/*~
+
+
+* Kernel Enumeration Summary
+** PCIe initialization and device discovery
+#+BEGIN_SRC bash :results output :exports both
+  sudo dmesg -T | egrep -i "pcie|nvme|r816|iwlwifi|mhi|qmi|wwan|link up|link never came up" | tail -n 200
+#+END_SRC
+
+** Expected footprint (F2SC01)
+| Interface | Device                      | Bus / Driver | dmesg Keyword Example                  |
+|-----------+-----------------------------+--------------+----------------------------------------|
+| eth0      | Jetson Orin NX internal GbE | eqos         | "eqos 2490000.ethernet: registered"    |
+| eth1      | Realtek RTL8111/8168 PCIe   | r8168        | "r8168 Gigabit Ethernet driver loaded" |
+| wlan0     | Intel AX210 (PCIe)          | iwlwifi      | "iwlwifi … firmware version …"         |
+| wwan0     | Quectel RM520N-GL (USB 3.0) | qmi_wwan     | "qmi_wwan … register 'wwan0'"          |
+
+
+* PCIe Device Detection
+** Enumerate endpoints
+#+BEGIN_SRC bash :results output :exports both
+  lspci -nn | egrep "Ethernet|Network|Communication|Non-Volatile" || true
+#+END_SRC
+
+Expected devices:
+|       Bus ID | Description                 | Vendor/Device ID | Notes                 |
+|--------------+-----------------------------+------------------+-----------------------|
+| 0008:01:00.0 | Realtek RTL8168 PCIe GbE    | [10ec:8168]      | eth1                  |
+| 0009:01:00.0 | Realtek RTL8168 PCIe GbE    | [10ec:8168]      | (if dual NIC present) |
+| 0001:01:00.0 | Intel AX210 Wi-Fi           | [8086:2725]      | wlan0                 |
+| 0004:01:00.0 | Kingston Technology Company | [2646:501b]      | Non-Volatile memory   |
+
+** Link training and speed
+#+BEGIN_SRC bash :results output :exports both
+  sudo lspci -vvv | egrep -A6 "LnkCap|LnkSta" | grep -E "LnkSta|LnkCap"
+#+END_SRC
+
+** Advanced Error Reporting (AER) events
+#+BEGIN_SRC bash :results output :exports both
+  sudo dmesg -T | egrep -i "AER|pcieport|error" | tail -n 100 || true
+#+END_SRC
+
+* USB / Modem Enumeration
+** USB topology
+#+BEGIN_SRC bash :results output :exports both
+  lsusb -t | egrep "Driver|Class" || true
+#+END_SRC
+
+** Expected devices
+| Bus / Port            | Description                         | Driver     |
+|-----------------------+-------------------------------------+------------|
+| Bus 02 / Port 1       | Quectel RM520N-GL (5 G modem)       | qmi_wwan   |
+| Bus 01 / Port 3       | FTDI (debug UART adapter, optional) | ftdi_sio   |
+| Root hub 3610000.xhci | Orin XUSB controller                | tegra-xusb |
+
+** Kernel binding (modem)
+#+BEGIN_SRC bash :results output :exports both
+  dmesg | egrep -i "qmi_wwan|cdc_mbim|usbcore" | tail -n 80
+  ls -l /dev/cdc-wdm* /dev/wwan* 2>/dev/null || echo "No modem device nodes detected"
+#+END_SRC
+
+** Verify sysfs entries
+#+BEGIN_SRC bash :results output :exports both
+  echo "Network interfaces:"
+  ls /sys/class/net/ || true
+  echo
+  echo "WWAN devices:"
+  ls /sys/class/wwan/ 2>/dev/null || echo "(none)"
+#+END_SRC
+
+
+* Driver Binding & Firmware Load Checks
+** Ethernet (Realtek / EQOS)
+#+BEGIN_SRC bash :results output :exports both
+  ethtool -i eth0 2>/dev/null || echo "eth0 not available"
+  ethtool -i eth1 2>/dev/null || echo "eth1 not available"
+#+END_SRC
+
+** Wi-Fi (Intel AX210)
+#+BEGIN_SRC bash :results output :exports both
+  dmesg | grep iwlwifi | tail -n 15
+  ls /lib/firmware/ | grep iwlwifi || echo "Firmware missing"
+#+END_SRC
+
+** Modem (Quectel)
+#+BEGIN_SRC bash :results output :exports both
+  modinfo qmi_wwan | grep version
+  lsmod | grep qmi_wwan
+  dmesg | grep qmi_wwan | tail -n 10
+#+END_SRC
+
+
+* Evidence
+- Save =dmesg= excerpts, =lspci -nn=, and =lsusb -t= outputs to =evidence/pcie_modem/=
+- Example logs:
+  - =pcie_devices.log=
+  - =modem_mmcli.log=
+  - =quectel_cm.log=
+
+
+* Troubleshooting
+- *PCIe link never came up:** check standoff seating and F2SC01 power rails (VDD_M.2B/E).
+- *No Wi-Fi:* confirm /iwlwifi/ firmware present under =/lib/firmware/=.
+- *No modem nodes:* check USB enumeration; may need =modprobe qmi_wwan= or reinsert module.
+- *Connection fails:* verify APN; use =mmcli -m 0 --command="AT+CFUN?"= to confirm modem state.
+
+
+* Findings Log (NCR)
+| ID | Device | Severity | Description         | Evidence                               | Action      | Status |
+|----+--------+----------+---------------------+----------------------------------------+-------------+--------|
+|  1 | PCIe   | Major    | Link down on slot B | [[file:evidence/pcie_modem/pcie_link.log]] | Investigate | Open   |
+
+
+* Disposition
+- [ ] PASS — proceed to [[file:08_IO_Bringup.org][08 I/O Bring-up]]
+- [ ] FAIL — hold for rework/RMA and re-test
+
+* Sign-off
+| Role | Name | Date | Signature |
+|------+-------+------+-----------|
+| Operator | | | |
+| QA Reviewer | | | |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]] | [[file:08_IO_Bringup.org][Next: I/O Bring-up]]

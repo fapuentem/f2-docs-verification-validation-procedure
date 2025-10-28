@@ -30,7 +30,7 @@ Ensure that enumeration, throughput, and device mounting behave as expected.
 - All USB host ports detected (USB2, USB3)
 - Connected devices enumerate without kernel errors
 - NVMe storage visible as block device
-- No overcurrent or “USB disconnect” errors under load
+- No overcurrent or "USB disconnect" errors under load
 
 * Hardware Detection — Kernel & Topology
 ** dmesg summary (USB / storage)

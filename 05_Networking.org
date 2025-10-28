@@ -1,6 +1,7 @@
 #+TITLE: Networking (Ethernet / Wi-Fi / WWAN) — F2 Carrier Board (F2SC01)
 #+AUTHOR: Fabricio Puente M.
-#+DATE: <2025-10-27>
+#+DATE: <2025-10-28 Tue>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
 #+OPTIONS: toc:t num:t ^:t
 #+PROPERTY: header-args :results output :exports both
 #+FILETAGS: :F2:CarrierBoard:VnV:Networking:Ethernet:WiFi:WWAN:Kernel:Drivers:

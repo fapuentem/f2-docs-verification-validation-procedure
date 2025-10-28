@@ -1,0 +1,181 @@
+#+TITLE: I/O Visibility (Kernel Detection) — F2 Smart Controller (F2SC01)
+#+AUTHOR: Fabricio Puente M.
+#+DATE: <2025-10-28 Tue>
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+OPTIONS: toc:t num:t ^:t
+#+PROPERTY: header-args :results output :exports both
+#+FILETAGS: :F2:CarrierBoard:VnV:IO:Kernel:Detection:GPIO:UART:I2C:SPI:
+
+* Purpose
+Confirm that low-speed I/O blocks on the F2SC01 are visible to GNU/Linux and bound to the
+expected kernel drivers. *No functional read/write/loopback tests here* — visibility only.
+
+* Scope
+- PCB revision ~v3.1.x~ (or as specified)
+- Jetson Orin NX SOM (JetPack/L4T 5.1.2)
+- After PCIe/USB steps have *passed*
+
+* Metadata
+:PROPERTIES:
+:Board-Model:   F2SC01
+:PCB-Revision:
+:SOM:           Jetson Orin NX (SKU: )
+:Serial-Number:
+:Lot/WO:
+:Operator:
+:DATE:
+:END:
+
+* Acceptance Criteria
+- Kernel logs (dmesg) show controller probe with no critical errors
+- Nodes present in */dev* and */sys* for GPIO, UART, I²C, SPI as designed
+- Device tree bindings/aliases match expected names
+- Optional: pinmux dump present for reference
+
+* Kernel Footprint (global)
+** dmesg — core I/O subsystems
+#+BEGIN_SRC bash :results output :exports both
+  sudo dmesg -T | egrep -i "gpio|pinctrl|i2c|spi|serial|ttyTHS|ttyS|tegra" | tail -n 300
+#+END_SRC
+
+** Device tree model & chosen aliases (quick sanity)
+#+BEGIN_SRC bash :results output :exports both
+  tr -d '\0' </proc/device-tree/model 2>/dev/null || true
+  echo "Aliases in DT (grep serial/i2c/spi):"
+  grep -H "" /proc/device-tree/aliases/* 2>/dev/null | egrep "serial|i2c|spi" || true
+#+END_SRC
+
+
+* GPIO Visibility (libgpiod)
+** Enumerate GPIO chips/lines
+#+BEGIN_SRC bash :results output :exports both
+  gpiodetect 2>/dev/null || echo "gpiodetect not available"
+  echo
+  for chip in /dev/gpiochip*; do
+    [ -e "$chip" ] || continue
+    echo "## $chip"
+    gpioinfo "$chip" 2>/dev/null | sed -n '1,15p'
+  done
+#+END_SRC
+
+** Sysfs (legacy) presence check (read-only)
+#+BEGIN_SRC bash :results output :exports both
+  ls -l /sys/class/gpio 2>/dev/null || true
+#+END_SRC
+
+** Expected footprint (fill per board)
+| GPIO Group/Chip | Expected Lines/Labels | Present? | Notes |
+|-----------------+-----------------------+----------+-------|
+| gpiochip0       | SOM + carrier lines   |          |       |
+| gpiochip1       | Expander (if any)     |          |       |
+| gpiochip1       |                       |          |       |
+
+---
+
+* UART Visibility
+** Enumerate serial TTY nodes
+#+BEGIN_SRC bash :results output :exports both
+  ls -l /dev/ttyTHS* /dev/ttyS* /dev/ttyAMA* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true
+  dmesg | egrep -i "serial|ttyTHS|ttyS|ttyACM|ttyUSB" | tail -n 120
+#+END_SRC
+
+** Expected footprint (fill per board)
+| Port             | Linux Node (expected)        | Bus/Driver      | Present? | Notes        |
+|------------------+------------------------------+-----------------+----------+--------------|
+| UART0 (console)  | /dev/ttyTCU0 or /dev/ttyAMA0 | Tegra           |          |              |
+| UART1            | /dev/ttyTHS1                 | Tegra           |          | Header Jxx   |
+| UART2            | /dev/ttyTHS2                 | Tegra           |          | Header Jxx   |
+| USB-UART (debug) | /dev/ttyUSB0                 | ftdi_sio/pl2303 |          | lsusb shows? |
+
+
+
+* I²C Visibility
+** List I²C controllers (buses)
+#+BEGIN_SRC bash :results output :exports both
+  i2cdetect -l 2>/dev/null || echo "i2c-tools not installed"
+#+END_SRC
+
+** Probe map (non-intrusive scan listing)
+#+BEGIN_SRC bash :results output :exports both
+  for BUS in 0 1 2 3 4 5 6 7; do
+    [ -e "/dev/i2c-$BUS" ] || continue
+    echo "Bus $BUS:"
+    sudo i2cdetect -y $BUS | sed -n '1,12p'
+  done
+#+END_SRC
+
+** Sysfs confirmation
+#+BEGIN_SRC bash :results output :exports both
+  ls -l /sys/class/i2c-dev/ 2>/dev/null || true
+  for n in /sys/bus/i2c/devices/i2c-*; do
+    [ -e "$n" ] || continue
+    echo "Node: $(basename $n) -> $(readlink -f $n)"
+  done
+#+END_SRC
+
+** Expected footprint (examples — adjust to your BOM)
+| I²C Bus | Expected Device   | Address | Present? | Notes |
+|---------+-------------------+---------+----------+-------|
+|       0 | EEPROM (Board ID) |    0x50 |          |       |
+|       1 | Temp Sensor       |    0x42 |          |       |
+|       2 | GPIO Expander     |    0x20 |          |       |
+
+* SPI Visibility
+** spidev nodes
+#+BEGIN_SRC bash :results output :exports both
+  ls -l /dev/spi* 2>/dev/null || echo "No /dev/spi* nodes found"
+#+END_SRC
+
+** Kernel messages for SPI controllers/clients
+#+BEGIN_SRC bash :results output :exports both
+  dmesg | egrep -i "spi" | tail -n 120
+#+END_SRC
+
+** Sysfs bindings
+#+BEGIN_SRC bash :results output :exports both
+  for n in /sys/bus/spi/devices/spi*; do
+      [ -e "$n" ] || continue
+    echo "$(basename $n) -> $(readlink -f $n)"
+  done
+#+END_SRC
+
+** Expected footprint (fill per board)
+| SPI Ctlr/Chip Select | Linux Node (spidev?) | Present? | Notes |
+|----------------------+----------------------|----------|-------|
+| SPI0.0               | /dev/spidev0.0       |          |       |
+| SPI1.0               | /dev/spidev1.0       |          |       |
+
+---
+
+* Evidence (attach logs/artifacts)
+- Save outputs under =evidence/io_visibility/=:
+  - =dmesg_io_tail.log=
+  - =gpioinfo_summary.txt=
+  - =i2c_bus_map.txt=
+  - =spi_nodes.txt=
+  - =tty_nodes.txt=
+
+* Troubleshooting (visibility only)
+- **Missing node in /dev:** verify DT overlay and =/proc/device-tree/aliases= mapping.
+- **dmesg shows “probe deferral/failed”:** check regulator rails and reset lines (PERST#, enable GPIO).
+- **No I²C buses:** confirm =i2c-bus= drivers built/loaded; review pinmux.
+- **No spidev nodes:** ensure spidev is enabled in DT (client binding) or corresponding driver is present.
+- **TTY node absent:** confirm correct serial alias and that the port isn’t disabled by bootloader/FDT.
+
+* Findings Log (NCR)
+| ID | Subsystem | Node/Bus | Severity | Description     | Evidence                                    | Status |
+|----+-----------+----------+----------+-----------------+---------------------------------------------+--------|
+|  1 | I²C       | i2c-1    | Major    | Bus not exposed | [[file:evidence/io_visibility/i2c_bus_map.txt]] | Open   |
+
+* Disposition
+- [ ] PASS — proceed to *Thermals & Fans* (visibility only)
+- [ ] FAIL — hold for DT/pinmux review and re-test
+
+* Sign-off
+| Role        | Name | Date | Signature |
+|-------------+------+------ +----------|
+| Operator    |      |       |          |
+| QA Reviewer |      |       |          |
+
+* Links
+- [[file:00_INDEX.org][Back to Index]] | [[file:09_Thermals_and_Fans.org][Next: Thermals & Fans (visibility)]]
