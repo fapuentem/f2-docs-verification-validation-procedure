@@ -1,21 +1,25 @@
-#+TITLE: I/O Visibility (Kernel Detection) — F2 Smart Controller (F2SC01)
+#+TITLE: I/O Visibility — F2 Smart Controller (F2SC01)
 #+AUTHOR: Fabricio Puente M.
 #+DATE: <2025-10-28 Tue>
 #+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
 #+OPTIONS: toc:t num:t ^:t
 #+PROPERTY: header-args :results output :exports both
-#+FILETAGS: :F2:CarrierBoard:VnV:IO:Kernel:Detection:GPIO:UART:I2C:SPI:
+#+FILETAGS: :F2:CarrierBoard:VnV:IO:Kernel:Detection:GPIO:UART:I2C:SPI:CAN:TPM:Sensors:
 
 * Purpose
-Confirm that low-speed I/O blocks on the F2SC01 are visible to GNU/Linux and bound to the
-expected kernel drivers. *No functional read/write/loopback tests here* — visibility only.
+
+Verify that Linux *can see* all F2SC01 low-speed I/O and onboard sensors:
+device nodes exist, drivers bind, and key identity registers are readable.
+(No extended functional/closed-loop testing here.)
 
 * Scope
+
 - PCB revision ~v3.1.x~ (or as specified)
-- Jetson Orin NX SOM (JetPack/L4T 5.1.2)
-- After PCIe/USB steps have *passed*
+- Jetson Orin NX (JetPack/L4T 5.1.2)
+- After PCIe/USB visibility steps have passed
 
 * Metadata
+
 :PROPERTIES:
 :Board-Model:   F2SC01
 :PCB-Revision:
@@ -27,155 +31,258 @@ expected kernel drivers. *No functional read/write/loopback tests here* — visi
 :END:
 
 * Acceptance Criteria
-- Kernel logs (dmesg) show controller probe with no critical errors
-- Nodes present in */dev* and */sys* for GPIO, UART, I²C, SPI as designed
-- Device tree bindings/aliases match expected names
-- Optional: pinmux dump present for reference
 
-* Kernel Footprint (global)
-** dmesg — core I/O subsystems
+- Kernel logs show controller/sensor probe without critical errors
+- Expected nodes appear under */dev* and */sys*
+- Basic ID / WHO_AM_I reads match data sheets (where applicable)
+- Evidence saved under =evidence/io_visibility/=
+
+* Notes
+
+- Replace bus numbers if your DT assigns different I²C indices.
+- Reads use =i2c-tools=; keep them brief and non-destructive.
+
+
+* Global Kernel Footprint
+
+** dmesg — GPIO/UART/I²C/SPI/CAN/TPM
+
 #+BEGIN_SRC bash :results output :exports both
-  sudo dmesg -T | egrep -i "gpio|pinctrl|i2c|spi|serial|ttyTHS|ttyS|tegra" | tail -n 300
+  sudo dmesg -T | egrep -i "gpio|pinctrl|i2c|spi|serial|tty|can|mttcan|tpm|tpm_tis|hwmon|tach" | tail -n 300
 #+END_SRC
 
-** Device tree model & chosen aliases (quick sanity)
+** Device tree aliases (quick sanity)
+
 #+BEGIN_SRC bash :results output :exports both
   tr -d '\0' </proc/device-tree/model 2>/dev/null || true
-  echo "Aliases in DT (grep serial/i2c/spi):"
-  grep -H "" /proc/device-tree/aliases/* 2>/dev/null | egrep "serial|i2c|spi" || true
+  echo "Aliases:"
+  grep -H "" /proc/device-tree/aliases/* 2>/dev/null | egrep "serial|i2c|spi|can|tpm" || true
 #+END_SRC
 
+* USB Hub & RS-485 Bridge (Battery Monitor @ ttyUSBx)
 
-* GPIO Visibility (libgpiod)
-** Enumerate GPIO chips/lines
+** USB hub (SMSC/Microchip 0424:2514) — presence
+
 #+BEGIN_SRC bash :results output :exports both
-  gpiodetect 2>/dev/null || echo "gpiodetect not available"
-  echo
-  for chip in /dev/gpiochip*; do
-    [ -e "$chip" ] || continue
-    echo "## $chip"
-    gpioinfo "$chip" 2>/dev/null | sed -n '1,15p'
+  lsusb | grep -i "0424:2514" || echo "Hub 0424:2514 not found"
+#+END_SRC
+
+** FTDI/I²C/SPI/UART bridge (0403:6015) — presence and tty
+
+#+BEGIN_SRC bash :results output :exports both
+  lsusb | grep -i "0403:6015" || echo "FTDI 0403:6015 not found"
+  ls -l /dev/ttyUSB* 2>/dev/null || echo "No /dev/ttyUSB* nodes"
+#+END_SRC
+
+** Optional: udev attributes for the RS-485 dongle
+
+#+BEGIN_SRC bash :results output :exports both
+  for n in /dev/ttyUSB*; do
+    echo "### $n"
+    udevadm info -q property -n "$n" | egrep "ID_VENDOR_ID|ID_MODEL_ID|DEVPATH"
   done
 #+END_SRC
 
-** Sysfs (legacy) presence check (read-only)
+*Evidence:* The bridge should enumerate as =/dev/ttyUSBx= and lsusb should show *0403:6015*.
+
+* CAN-BUS (visibility only)
+
+** Kernel modules
+
 #+BEGIN_SRC bash :results output :exports both
-  ls -l /sys/class/gpio 2>/dev/null || true
+  sudo modprobe can
+  sudo modprobe can_raw
+  sudo modprobe mttcan
+  lsmod | egrep "can|mttcan"
 #+END_SRC
 
-** Expected footprint (fill per board)
-| GPIO Group/Chip | Expected Lines/Labels | Present? | Notes |
-|-----------------+-----------------------+----------+-------|
-| gpiochip0       | SOM + carrier lines   |          |       |
-| gpiochip1       | Expander (if any)     |          |       |
-| gpiochip1       |                       |          |       |
+** Interface creation
 
----
+#+BEGIN_SRC bash :results output :exports both
+  sudo ip link set can0 up type can bitrate 1000000
+  ip -details link show can0 || echo "can0 not found"
+#+END_SRC
 
-* UART Visibility
-** Enumerate serial TTY nodes
+** Expected output example
+: 11: can0: <NOARP,UP,LOWER_UP,ECHO> mtu 16 qdisc pfifo_fast state UP group default qlen 10
+:     link/can
+
+** Sysfs nodes
+
+#+BEGIN_SRC bash :results output :exports both
+  ls -l /sys/class/net/ | grep can || echo "No CAN interfaces detected"
+#+END_SRC
+
+** Observe bus traffic (non-intrusive)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo apt-get install -y can-utils
+  timeout 5 candump can0 2>/dev/null || echo "No frames observed (expected if idle)"
+#+END_SRC
+
+** References
+- NVIDIA Jetson CAN Guide (r35.3.1):    [[https://docs.nvidia.com/jetson/archives/r35.3.1/DeveloperGuide/text/HR/ControllerAreaNetworkCan.html]]
+- Protocol background: [[https://en.wikipedia.org/wiki/ISO_15765-2][ISO 15765-2 (ISO-TP)]] | [[https://en.wikipedia.org/wiki/CANopen][CANopen]]
+
+* I²C Devices — IDs & Minimal Reads
+
+** Inventory (buses and quick map)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo i2cdetect -l 2>/dev/null || echo "i2c-tools not installed"
+  for BUS in {0..10}; do
+    [ -e "/dev/i2c-$BUS" ] || continue
+    echo "Bus $BUS map:"
+    sudo i2cdetect -y -r $BUS | sed -n '1,12p'
+  done
+#+END_SRC
+
+** ADS7142 (NTC ADC) — bus 7 @ 0x1f (presence)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo i2cget -y 7 0x1f 2>/dev/null || echo "ADS7142 not responding at 0x1f on bus 7"
+#+END_SRC
+
+*Note:* A return like =0xff= confirms bus/address responds. (Optional functional temp read lives outside this doc.)
+
+** HDC1080 (Temp/Humidity) — ID registers (word-swapped)
+
+- Manufacturer ID register =0xFE= → expects =0x5449= ("TI")
+- Device ID register =0xFF= → expects =0x1050= ("HDC1080")
+
+#+BEGIN_SRC bash :results output :exports both
+  echo "Manufacturer ID (0xFE):"
+  sudo i2cget -y 7 0x40 0xfe w 2>/dev/null || true
+  echo "Device ID (0xFF):"
+  sudo i2cget -y 7 0x40 0xff w 2>/dev/null || true
+
+#+END_SRC
+
+*Note:* =0x4954= and =0x5010=, which are byte-swapped word reads matching TI/HDC1080.
+
+** LIS2DE12 (Accel) — WHO_AM_I (0x0F → 0x33)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo i2cget -y 7 0x18 0x0f b 2>/dev/null || echo "LIS2DE12 WHO_AM_I read failed"
+#+END_SRC
+
+** AT24CS01 (EEPROM + Unique ID) — dump (non-destructive)
+
+#+BEGIN_SRC bash :results output :exports both
+  echo "EEPROM @0x50 (first 0x40 bytes):"
+  sudo i2cdump -y 1 0x50 b 2>/dev/null | sed -n '1,6p' || true
+  echo
+  echo "Unique ID page (example @0x58):"
+  sudo i2cdump -y 1 0x58 b 2>/dev/null | sed -n '1,8p' || true
+#+END_SRC
+
+** TPS25990 (eFuse) — ASCII signature block
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo i2cdump -y 1 0x46 s 0x9a 2>/dev/null || echo "TPS25990 signature not found"
+#+END_SRC
+
+*Your example shows ASCII =TPS25990= in the dump.*
+
+** GPIO Expanders
+
+*** PCAL6408 — bus 1 @ 0x20 (Input Port 0 register 0x00)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo i2cget -y 1 0x20 0x00 b 2>/dev/null || echo "PCAL6408 not responding"
+#+END_SRC
+
+*** TCA9535 — bus 7 @ 0x20 (Input Port 0 register 0x00)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo i2cget -y 7 0x20 0x00 b 2>/dev/null || echo "TCA9535 not responding"
+#+END_SRC
+
+
+* SPI & TPM 2.0 (visibility)
+
+** spidev nodes and TPM character device
+
+#+BEGIN_SRC bash :results output :exports both
+  ls -l /dev/spi* 2>/dev/null || echo "No /dev/spi*"
+  ls -l /dev/tpm* 2>/dev/null || echo "No /dev/tpm*"
+#+END_SRC
+
+** Kernel binding (tpm_tis_spi or firmware TPM reference)
+
+#+BEGIN_SRC bash :results output :exports both
+  sudo dmesg | egrep -i "tpm|tpm_tis|spi" | tail -n 120
+#+END_SRC
+
+*Reference:* [[https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Security/FirmwareTPM.html][Firmware TPM — NVIDIA Jetson Linux Developer Guide.]]
+
+
+* UART / TTY Nodes (recap)
+
 #+BEGIN_SRC bash :results output :exports both
   ls -l /dev/ttyTHS* /dev/ttyS* /dev/ttyAMA* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true
-  dmesg | egrep -i "serial|ttyTHS|ttyS|ttyACM|ttyUSB" | tail -n 120
+  dmesg | egrep -i "serial|ttyTHS|ttyS|ttyACM|ttyUSB" | tail -n 80
 #+END_SRC
 
-** Expected footprint (fill per board)
-| Port             | Linux Node (expected)        | Bus/Driver      | Present? | Notes        |
-|------------------+------------------------------+-----------------+----------+--------------|
-| UART0 (console)  | /dev/ttyTCU0 or /dev/ttyAMA0 | Tegra           |          |              |
-| UART1            | /dev/ttyTHS1                 | Tegra           |          | Header Jxx   |
-| UART2            | /dev/ttyTHS2                 | Tegra           |          | Header Jxx   |
-| USB-UART (debug) | /dev/ttyUSB0                 | ftdi_sio/pl2303 |          | lsusb shows? |
+* Fans, Tach, and hwmon
 
+** CPU Fan RPM (tachometer node)
 
-
-* I²C Visibility
-** List I²C controllers (buses)
 #+BEGIN_SRC bash :results output :exports both
-  i2cdetect -l 2>/dev/null || echo "i2c-tools not installed"
+  cat /sys/devices/platform/39c0000.tachometer/hwmon/*/rpm 2>/dev/null || echo "CPU tach node not found"
 #+END_SRC
 
-** Probe map (non-intrusive scan listing)
+** Cabinet Fan RPM & Temp Sensor (if exposed via hwmon)
+
 #+BEGIN_SRC bash :results output :exports both
-  for BUS in 0 1 2 3 4 5 6 7; do
-    [ -e "/dev/i2c-$BUS" ] || continue
-    echo "Bus $BUS:"
-    sudo i2cdetect -y $BUS | sed -n '1,12p'
+  for h in /sys/class/hwmon/hwmon*; do
+      [ -e "$h" ] || continue
+      echo "== $h ($(cat $h/name 2>/dev/null)) =="
+      ls $h 2>/dev/null | egrep "temp[0-9]_input|fan[0-9]_input" | sed "s|^|  |"
   done
 #+END_SRC
 
-** Sysfs confirmation
-#+BEGIN_SRC bash :results output :exports both
-  ls -l /sys/class/i2c-dev/ 2>/dev/null || true
-  for n in /sys/bus/i2c/devices/i2c-*; do
-    [ -e "$n" ] || continue
-    echo "Node: $(basename $n) -> $(readlink -f $n)"
-  done
-#+END_SRC
-
-** Expected footprint (examples — adjust to your BOM)
-| I²C Bus | Expected Device   | Address | Present? | Notes |
-|---------+-------------------+---------+----------+-------|
-|       0 | EEPROM (Board ID) |    0x50 |          |       |
-|       1 | Temp Sensor       |    0x42 |          |       |
-|       2 | GPIO Expander     |    0x20 |          |       |
-
-* SPI Visibility
-** spidev nodes
-#+BEGIN_SRC bash :results output :exports both
-  ls -l /dev/spi* 2>/dev/null || echo "No /dev/spi* nodes found"
-#+END_SRC
-
-** Kernel messages for SPI controllers/clients
-#+BEGIN_SRC bash :results output :exports both
-  dmesg | egrep -i "spi" | tail -n 120
-#+END_SRC
-
-** Sysfs bindings
-#+BEGIN_SRC bash :results output :exports both
-  for n in /sys/bus/spi/devices/spi*; do
-      [ -e "$n" ] || continue
-    echo "$(basename $n) -> $(readlink -f $n)"
-  done
-#+END_SRC
-
-** Expected footprint (fill per board)
-| SPI Ctlr/Chip Select | Linux Node (spidev?) | Present? | Notes |
-|----------------------+----------------------|----------|-------|
-| SPI0.0               | /dev/spidev0.0       |          |       |
-| SPI1.0               | /dev/spidev1.0       |          |       |
-
----
-
-* Evidence (attach logs/artifacts)
-- Save outputs under =evidence/io_visibility/=:
+* Evidence (save logs/artifacts)
+- Save outputs to =evidence/io_visibility/=:
   - =dmesg_io_tail.log=
-  - =gpioinfo_summary.txt=
-  - =i2c_bus_map.txt=
-  - =spi_nodes.txt=
+  - =usb_ftdi_hub.log=
+  - =i2c_map_bus1_bus7.txt=
+  - =eeprom_at24_dump.txt=
+  - =lis2de12_whoami.txt=
+  - =hdc1080_ids.txt=
+  - =tps25990_sig.txt=
+  - =gpio_expanders_read.txt=
+  - =tpm_spi_nodes.txt=
   - =tty_nodes.txt=
+  - =hwmon_fans.txt=
 
 * Troubleshooting (visibility only)
-- **Missing node in /dev:** verify DT overlay and =/proc/device-tree/aliases= mapping.
-- **dmesg shows “probe deferral/failed”:** check regulator rails and reset lines (PERST#, enable GPIO).
-- **No I²C buses:** confirm =i2c-bus= drivers built/loaded; review pinmux.
-- **No spidev nodes:** ensure spidev is enabled in DT (client binding) or corresponding driver is present.
-- **TTY node absent:** confirm correct serial alias and that the port isn’t disabled by bootloader/FDT.
+
+- *I²C device missing:* confirm bus number, power rail, and DT node; review pull-ups.
+- *EEPROM UID page empty:* some lots lock UID; verify address (0x58 vs. vendor variant).
+- *HDC1080 IDs byte-swapped:* =i2cget -w= returns words in LSB:MSB order; compare against 0x5449/0x1050.
+- *LIS2DE12 WHO_AM_I ≠ 0x33:* check address variant or reset line.
+- *FTDI missing:* re-seat USB, verify hub (0424:2514) enumerates, check cable.
+- *TPM node absent:* ensure =tpm_tis_spi= or firmware TPM enabled in kernel/DT.
 
 * Findings Log (NCR)
-| ID | Subsystem | Node/Bus | Severity | Description     | Evidence                                    | Status |
-|----+-----------+----------+----------+-----------------+---------------------------------------------+--------|
-|  1 | I²C       | i2c-1    | Major    | Bus not exposed | [[file:evidence/io_visibility/i2c_bus_map.txt]] | Open   |
+
+| ID | Subsystem | Node/Addr | Severity | Description | Evidence | Status |
+|----+-----------+-----------+----------+-------------+----------+--------|
+| 1  | I²C       | 7-0x18    | Major    | LIS2DE12 WHO_AM_I mismatch | [[file:evidence/io_visibility/lis2de12_whoami.txt]] | Open |
+| 2  | USB/TTY   | ttyUSB?   | Minor    | RS-485 bridge not enumerated | [[file:evidence/io_visibility/usb_ftdi_hub.log]] | Open |
 
 * Disposition
-- [ ] PASS — proceed to *Thermals & Fans* (visibility only)
-- [ ] FAIL — hold for DT/pinmux review and re-test
+
+- [ ] PASS — all nodes visible and IDs readable
+- [ ] FAIL — hold for DT/power/pinmux review and re-test
 
 * Sign-off
+
 | Role        | Name | Date | Signature |
-|-------------+------+------ +----------|
-| Operator    |      |       |          |
-| QA Reviewer |      |       |          |
+|-------------+------+------+-----------|
+| Operator    |      |      |           |
+| QA Reviewer |      |      |           |
 
 * Links
-- [[file:00_INDEX.org][Back to Index]] | [[file:09_Thermals_and_Fans.org][Next: Thermals & Fans (visibility)]]
+- [[file:00_INDEX.org][Back to Index]]
