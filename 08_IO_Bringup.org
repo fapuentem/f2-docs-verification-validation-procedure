@@ -134,9 +134,6 @@ device nodes exist, drivers bind, and key identity registers are readable.
   echo "=== Checking CAN interfaces ==="
   ip -details link show type can 2>/dev/null || echo "No CAN interfaces detected yet."
 
-  echo
-  echo "=== Turning on  can0 interface ==="
-  ip link set can0 up type can bitrate 1000000
 #+END_SRC
 
 ** Observe bus traffic (non-intrusive)
@@ -395,18 +392,18 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 ** AT24CS01 (EEPROM + Unique ID) — dump (non-destructive)
 
-#+BEGIN_SRC bash :results output :exports both
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
   echo "EEPROM @0x50 (first 0x40 bytes):"
-  sudo i2cdump -y 1 0x50 b 2>/dev/null | sed -n '1,6p' || true
+  i2cdump -y 1 0x50 b 2>/dev/null | sed -n '1,6p' || true
   echo
   echo "Unique ID page (example @0x58):"
-  sudo i2cdump -y 1 0x58 b 2>/dev/null | sed -n '1,8p' || true
+  i2cdump -y 1 0x58 b 2>/dev/null | sed -n '1,8p' || true
 #+END_SRC
 
 ** TPS25990 (eFuse) — ASCII signature block
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo i2cdump -y 1 0x46 s 0x9a 2>/dev/null || echo "TPS25990 signature not found"
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
+  i2cdump -y 1 0x46 s 0x9a 2>/dev/null || echo "TPS25990 signature not found"
 #+END_SRC
 
 *Your example shows ASCII =TPS25990= in the dump.*
@@ -415,14 +412,14 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 *** PCAL6408 — bus 1 @ 0x20 (Input Port 0 register 0x00)
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo i2cget -y 1 0x20 0x00 b 2>/dev/null || echo "PCAL6408 not responding"
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
+  i2cget -y 1 0x20 0x00 b 2>/dev/null || echo "PCAL6408 not responding"
 #+END_SRC
 
 *** TCA9535 — bus 7 @ 0x20 (Input Port 0 register 0x00)
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo i2cget -y 7 0x20 0x00 b 2>/dev/null || echo "TCA9535 not responding"
+#+BEGIN_SRC :dir /sudo:: bash :results output :exports both
+  i2cget -y 7 0x20 0x00 b 2>/dev/null || echo "TCA9535 not responding"
 #+END_SRC
 
 
@@ -494,10 +491,10 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 * Findings Log (NCR)
 
-| ID | Subsystem | Node/Addr | Severity | Description | Evidence | Status |
-|----+-----------+-----------+----------+-------------+----------+--------|
-| 1  | I²C       | 7-0x18    | Major    | LIS2DE12 WHO_AM_I mismatch | [[file:evidence/io_visibility/lis2de12_whoami.txt]] | Open |
-| 2  | USB/TTY   | ttyUSB?   | Minor    | RS-485 bridge not enumerated | [[file:evidence/io_visibility/usb_ftdi_hub.log]] | Open |
+| ID | Subsystem | Node/Addr | Severity | Description                  | Evidence                                        | Status |
+|----+-----------+-----------+----------+------------------------------+-------------------------------------------------+--------|
+|  1 | I²C       | 7-0x18    | Major    | LIS2DE12 WHO_AM_I mismatch   | [[file:evidence/io_visibility/lis2de12_whoami.txt]] | Open   |
+|  2 | USB/TTY   | ttyUSB?   | Minor    | RS-485 bridge not enumerated | [[file:evidence/io_visibility/usb_ftdi_hub.log]]    | Open   |
 
 * Disposition
 
