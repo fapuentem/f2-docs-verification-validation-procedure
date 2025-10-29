@@ -42,13 +42,25 @@ device nodes exist, drivers bind, and key identity registers are readable.
 - Replace bus numbers if your DT assigns different I²C indices.
 - Reads use =i2c-tools=; keep them brief and non-destructive.
 
-
 * Global Kernel Footprint
 
 ** dmesg — GPIO/UART/I²C/SPI/CAN/TPM
 
 #+BEGIN_SRC bash :results output :exports both
-  sudo dmesg -T | egrep -i "gpio|pinctrl|i2c|spi|serial|tty|can|mttcan|tpm|tpm_tis|hwmon|tach" | tail -n 300
+  echo "--- ALIASES ---"
+  for f in /proc/device-tree/aliases/i2c* /proc/device-tree/aliases/serial* /proc/device-tree/aliases/spi* 2>/dev/null; do
+    [ -e "$f" ] && printf "%-9s -> %s\n" "$(basename "$f")" "$(tr -d '\0' <"$f")"
+  done
+
+  echo "--- I2C ---"
+  sudo i2cdetect -l
+
+  echo "--- SERIAL ---"
+  sudo dmesg -T | egrep -i "tty|serial" | tail -n 10
+  ls -l /dev/ttyTHS* /dev/ttyTCU* /dev/ttyAMA* 2>/dev/null
+
+  echo "--- SPI ---"
+  ls -l /dev/spidev* 2>/dev/null || true
 #+END_SRC
 
 ** Device tree aliases (quick sanity)
@@ -56,25 +68,47 @@ device nodes exist, drivers bind, and key identity registers are readable.
 #+BEGIN_SRC bash :results output :exports both
   tr -d '\0' </proc/device-tree/model 2>/dev/null || true
   echo "Aliases:"
-  grep -H "" /proc/device-tree/aliases/* 2>/dev/null | egrep "serial|i2c|spi|can|tpm" || true
+  # Dump all alias -> target paths
+  for f in /proc/device-tree/aliases/*; do
+      alias=$(basename "$f")
+    target=$(tr -d '\0' <"$f")
+    printf "%-8s -> %s\n" "$alias" "$target"
+  done
 #+END_SRC
 
-* USB Hub & RS-485 Bridge (Battery Monitor @ ttyUSBx)
+* USB Hub & RS-485 Bridge
 
-** USB hub (SMSC/Microchip 0424:2514) — presence
+** USB hub (SMSC/Microchip 0424:2514)
 
 #+BEGIN_SRC bash :results output :exports both
-  lsusb | grep -i "0424:2514" || echo "Hub 0424:2514 not found"
+  # Check for Microchip USB 2.0 Hub (VID:PID = 0424:2514)
+  if lsusb | grep -qi "0424:2514"; then
+    echo "✅ USB Hub 0424:2514 detected (Microchip Technology, Inc.)"
+  else
+    echo "❌ USB Hub 0424:2514 not found"
+  fi
 #+END_SRC
 
-** FTDI/I²C/SPI/UART bridge (0403:6015) — presence and tty
+** FTDI bridge (0403:6015)  (Battery Monitor @ ttyUSBx)
 
 #+BEGIN_SRC bash :results output :exports both
-  lsusb | grep -i "0403:6015" || echo "FTDI 0403:6015 not found"
-  ls -l /dev/ttyUSB* 2>/dev/null || echo "No /dev/ttyUSB* nodes"
+  # Check for FTDI USB device (VID:PID = 0403:6015)
+  if lsusb | grep -qi "0403:6015"; then
+    echo "✅ FTDI device 0403:6015 detected"
+  else
+    echo "❌ FTDI device 0403:6015 not found"
+  fi
+
+  # List serial devices associated with FTDI
+  if ls /dev/ttyUSB* >/dev/null 2>&1; then
+    echo "📂 Serial devices found:"
+    ls -l /dev/ttyUSB*
+  else
+    echo "⚠️ No /dev/ttyUSB* device nodes detected"
+  fi
 #+END_SRC
 
-** Optional: udev attributes for the RS-485 dongle
+*** Optional: udev attributes for the RS-485 dongle
 
 #+BEGIN_SRC bash :results output :exports both
   for n in /dev/ttyUSB*; do
@@ -85,39 +119,107 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 *Evidence:* The bridge should enumerate as =/dev/ttyUSBx= and lsusb should show *0403:6015*.
 
+** AX210 BT
+
+#+BEGIN_SRC bash :results output :exports both
+  # Intel Bluetooth USB interface uses Vendor 8087.
+  # Common PIDs seen on AX2xx: 0026, 0029, 0032, 0033, 0035 (not exhaustive).
+  if lsusb | grep -qiE "8087:(0026|0029|0032|0033|0035)"; then
+    echo "✅ Intel Bluetooth interface detected (VID 8087)"
+    # Show which one(s)
+    lsusb | awk 'BEGIN{IGNORECASE=1}/8087:(0026|0029|0032|0033|0035)/{print "  • " $0}'
+  else
+    echo "❌ Intel Bluetooth interface not found (VID 8087 + common AX2xx PIDs)"
+  fi
+#+END_SRC
+
+** M2 Card Matter
+
 * CAN-BUS (visibility only)
 
 ** Kernel modules
+#+BEGIN_SRC bash :dir / :sudo yes :results output :exports both
+  echo "=== Loading CAN kernel modules ==="
+  for mod in can can_raw mttcan; do
+    if lsmod | grep -qw "$mod"; then
+      echo "[OK] Module '$mod' already loaded"
+    else
+      echo "[..] Loading '$mod'..."
+      if sudo modprobe "$mod"; then
+        echo "[OK] '$mod' loaded successfully"
+      else
+        echo "[ERR] Failed to load '$mod'"
+      fi
+    fi
+  done
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo modprobe can
-  sudo modprobe can_raw
-  sudo modprobe mttcan
-  lsmod | egrep "can|mttcan"
-#+END_SRC
+  echo
+  echo "=== Verifying loaded CAN modules ==="
+  lsmod | egrep "^can|^mttcan" || echo "No CAN-related modules found!"
 
-** Interface creation
-
-#+BEGIN_SRC bash :results output :exports both
-  sudo ip link set can0 up type can bitrate 1000000
-  ip -details link show can0 || echo "can0 not found"
-#+END_SRC
-
-** Expected output example
-: 11: can0: <NOARP,UP,LOWER_UP,ECHO> mtu 16 qdisc pfifo_fast state UP group default qlen 10
-:     link/can
-
-** Sysfs nodes
-
-#+BEGIN_SRC bash :results output :exports both
-  ls -l /sys/class/net/ | grep can || echo "No CAN interfaces detected"
+  echo
+  echo "=== Checking CAN interfaces ==="
+  ip -details link show type can 2>/dev/null || echo "No CAN interfaces detected yet."
 #+END_SRC
 
 ** Observe bus traffic (non-intrusive)
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo apt-get install -y can-utils
-  timeout 5 candump can0 2>/dev/null || echo "No frames observed (expected if idle)"
+#+BEGIN_SRC bash :dir / :sudo yes :results output :exports both
+  set -u
+
+  IFACE="${IFACE:-can0}"          # override with: IFACE=can1
+  DUR="${DUR:-5}"                 # seconds to observe
+  LOG="/tmp/candump_${IFACE}_$(date +%F_%H%M%S).log"
+
+  echo "=== CAN traffic observation (non-intrusive) ==="
+  echo "[i] Interface : $IFACE"
+  echo "[i] Duration  : ${DUR}s"
+
+  # 1) Ensure candump is available (quiet install if missing)
+  if ! command -v candump >/dev/null 2>&1; then
+    echo "[..] Installing can-utils..."
+    if sudo apt-get update -qq && sudo apt-get install -y -qq can-utils; then
+      echo "[OK] can-utils installed"
+    else
+      echo "[ERR] Failed to install can-utils"; exit 1
+    fi
+  fi
+
+  # 2) Inspect interface state (non-intrusive)
+  if ip link show "$IFACE" >/dev/null 2>&1; then
+    echo
+    echo "=== Interface status ==="
+    ip -details -brief link show "$IFACE"
+  else
+    echo "[ERR] Interface '$IFACE' not found"
+    echo "     Hint: check your device tree/driver and interface name."
+    exit 2
+  fi
+
+  # 3) Observe bus frames (no state changes performed)
+  echo
+  echo "=== Capturing traffic for ${DUR}s ==="
+  # Absolute timestamps; suppress stderr noise if iface is down
+  CAPTURE="$(timeout --preserve-status "${DUR}s" candump -t a "$IFACE" 2>/dev/null || true)"
+  COUNT="$(printf "%s\n" "$CAPTURE" | sed '/^[[:space:]]*$/d' | wc -l | awk '{print $1}')"
+
+  # 4) Save full capture and show a readable summary
+  printf "%s\n" "$CAPTURE" > "$LOG"
+
+  if [ "$COUNT" -gt 0 ]; then
+    echo "[OK] Observed $COUNT frame(s) in ${DUR}s"
+    echo
+    echo "=== Sample (first 10 lines) ==="
+    printf "%s\n" "$CAPTURE" | head -n 10
+    echo
+    echo "[i] Full capture saved to: $LOG"
+  else
+    echo "[WARN] No frames observed in ${DUR}s (bus may be idle)."
+    echo "      - If the interface is DOWN, bring it up with your desired bitrate, e.g.:"
+    echo "        sudo ip link set $IFACE up type can bitrate 500000"
+    echo "      - If using silent/loopback modes, ensure filters and mode are correct."
+    echo "      - Check cabling/termination and that peers are transmitting."
+  fi
 #+END_SRC
 
 ** References
@@ -126,7 +228,74 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 * I²C Devices — IDs & Minimal Reads
 
-** Inventory (buses and quick map)
+** Inventory (I²C buses with quick map & summary)
+
+#+BEGIN_SRC bash :dir / :sudo yes :results output :exports both
+  # Readable I²C inventory + quick maps (non-intrusive, uses i2cdetect -r)
+  # Tip: set MAX_LINES to control how many map lines to show (default: 12)
+  MAX_LINES="${MAX_LINES:-12}"
+
+  # 1) Preconditions
+  if ! command -v i2cdetect >/dev/null 2>&1; then
+    echo "ERROR: i2c-tools not installed (apt-get install -y i2c-tools)"
+    exit 0
+  fi
+
+  # 2) Bus inventory table (sorted)
+  echo "== I²C bus inventory =="
+  sudo i2cdetect -l 2>/dev/null | sort -V | \
+  awk '{
+         # Drop the trailing "I2C adapter" (last 2 fields)
+         n = NF-2; name=$3; for(i=4;i<=n;i++) name=name" "$i;
+         printf "  %-6s %-8s  %s\n", $1, $2, name
+       }'
+
+  # 3) Per-bus map + concise summary
+  echo ""
+  echo "== Quick maps & summaries =="
+  # Iterate using the inventory we just printed (ensures we only try real buses)
+  while read -r line; do
+    bus=$(awk "{print \$1}" <<<"$line")           # e.g., i2c-7
+    [ -n "$bus" ] || continue
+    busnum="${bus#i2c-}"
+    [ -e "/dev/i2c-$busnum" ] || continue
+
+    # Header with bus name (extract again for clarity)
+    bname=$(awk '{
+                   n = NF-2; name=$3; for(i=4;i<=n;i++) name=name" "$i;
+                   print name
+                 }' <<<"$line")
+    printf "\nBus %s (%s):\n" "$busnum" "$bname"
+
+    # Show a trimmed map (top MAX_LINES lines)
+    sudo i2cdetect -y -r "$busnum" 2>/dev/null | sed -n "1,${MAX_LINES}p"
+
+    # Build a summary of detected vs in-use (UU) addresses
+    sudo i2cdetect -y -r "$busnum" 2>/dev/null | \
+    awk 'NR==1{next}
+         {
+           # Row label like "30:" -> base address
+           base=$1; sub(":","",base); base=strtonum("0x" base);
+           for(i=2;i<=NF;i++){
+             val=$i; if(val=="--") continue;
+             addr = base + (i-2);
+             hex  = sprintf("%02x", addr);
+             if(val=="UU"){ used[hex]=1; u++ } else { found[hex]=1; d++ }
+           }
+         }
+         END{
+           if(d){
+             printf "  Devices (%d):", d;
+             for(a in found) printf " 0x%s", a; print ""
+           } else print "  Devices: none"
+
+           if(u){
+             printf "  In-use (UU) (%d):", u;
+             for(a in used) printf " 0x%s", a; print ""
+           }
+         }'
+  done < <(sudo i2cdetect -l 2>/dev/null | sort -V)
+#+END_SRC
 
 #+BEGIN_SRC bash :results output :exports both
   sudo i2cdetect -l 2>/dev/null || echo "i2c-tools not installed"
