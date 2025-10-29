@@ -344,13 +344,13 @@ device nodes exist, drivers bind, and key identity registers are readable.
   DEV=$(echo "$DEV" | tr 'A-F' 'a-f')
 
   if [ "$MFG" = "$EXPECT_MFG" ]; then
-    echo "PASS: Manufacturer ID matches expected TI ($EXPECT_MFG)"
+    echo "✅PASS: Manufacturer ID matches expected TI ($EXPECT_MFG)"
   else
     echo "WARN: Unexpected manufacturer ID (got $MFG, expected $EXPECT_MFG)"
   fi
 
   if [ "$DEV" = "$EXPECT_DEV" ]; then
-    echo "PASS: Device ID matches expected HDC1080 ($EXPECT_DEV)"
+    echo "✅PASS: Device ID matches expected HDC1080 ($EXPECT_DEV)"
   else
     echo "WARN: Unexpected device ID (got $DEV, expected $EXPECT_DEV)"
   fi
@@ -384,7 +384,7 @@ device nodes exist, drivers bind, and key identity registers are readable.
   EHEX=$(echo "$EXPECT" | tr 'A-F' 'a-f')
 
   if [ "$VHEX" = "$EHEX" ]; then
-    echo "PASS: LIS2DE12 WHO_AM_I = $VHEX (expected $EHEX)"
+    echo "✅PASS: LIS2DE12 WHO_AM_I = $VHEX (expected $EHEX)"
   else
     echo "WARN: Unexpected WHO_AM_I value (got $VHEX, expected $EHEX)"
   fi
@@ -418,7 +418,7 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 *** TCA9535 — bus 7 @ 0x20 (Input Port 0 register 0x00)
 
-#+BEGIN_SRC :dir /sudo:: bash :results output :exports both
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
   i2cget -y 7 0x20 0x00 b 2>/dev/null || echo "TCA9535 not responding"
 #+END_SRC
 
@@ -434,19 +434,11 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 ** Kernel binding (tpm_tis_spi or firmware TPM reference)
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo dmesg | egrep -i "tpm|tpm_tis|spi" | tail -n 120
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
+  dmesg | egrep -i "tpm|tpm_tis|spi" | tail -n 120
 #+END_SRC
 
 *Reference:* [[https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/SD/Security/FirmwareTPM.html][Firmware TPM — NVIDIA Jetson Linux Developer Guide.]]
-
-
-* UART / TTY Nodes (recap)
-
-#+BEGIN_SRC bash :results output :exports both
-  ls -l /dev/ttyTHS* /dev/ttyS* /dev/ttyAMA* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true
-  dmesg | egrep -i "serial|ttyTHS|ttyS|ttyACM|ttyUSB" | tail -n 80
-#+END_SRC
 
 * Fans, Tach, and hwmon
 
