@@ -103,12 +103,14 @@ device nodes exist, drivers bind, and key identity registers are readable.
   fi
 #+END_SRC
 
-** M2 Card Matter
-(Matter M2 Card is in development now, so this field was leave in blank on purpose.)
+** M.2 Card – BLE/Matter
+(This field is intentionally left blank, as the Matter M.2 card is still in development.)
+
 
 * CAN-BUS (visibility only)
 
 ** Kernel modules
+
 #+BEGIN_SRC bash :dir /sudo:: :results output :exports both
   echo "=== Loading CAN kernel modules ==="
   for mod in can can_raw mttcan; do
@@ -139,15 +141,17 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 ** Observe bus traffic (non-intrusive)
 
-#+BEGIN_SRC bash :dir / :sudo yes :results output :exports both
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
   set -u
 
   IFACE="${IFACE:-can0}"          # override with: IFACE=can1
+  BITRATE="${BITRATE:-1000000}"   # default 1 Mbps
   DUR="${DUR:-5}"                 # seconds to observe
   LOG="/tmp/candump_${IFACE}_$(date +%F_%H%M%S).log"
 
   echo "=== CAN traffic observation (non-intrusive) ==="
   echo "[i] Interface : $IFACE"
+  echo "[i] Bitrate   : ${BITRATE} bps"
   echo "[i] Duration  : ${DUR}s"
 
   # 1) Ensure candump is available (quiet install if missing)
@@ -169,6 +173,19 @@ device nodes exist, drivers bind, and key identity registers are readable.
     echo "[ERR] Interface '$IFACE' not found"
     echo "     Hint: check your device tree/driver and interface name."
     exit 2
+  fi
+
+  echo
+  echo "=== Turning on $IFACE interface ==="
+  if ip link show "$IFACE" | grep -q "state DOWN"; then
+      echo "[..] Bringing up $IFACE at ${BITRATE} bps..."
+      if sudo ip link set "$IFACE" up type can bitrate "$BITRATE"; then
+          echo "[OK] $IFACE is now UP"
+      else
+          echo "[ERR] Failed to bring up $IFACE"; exit 3
+      fi
+  else
+      echo "[OK] $IFACE is already UP"
   fi
 
   # 3) Observe bus frames (no state changes performed)
@@ -218,7 +235,7 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
   # 2) Bus inventory table (sorted)
   echo "== I²C bus inventory =="
-  sudo i2cdetect -l 2>/dev/null | sort -V | \
+  i2cdetect -l 2>/dev/null | sort -V | \
   awk '{
          # Drop the trailing "I2C adapter" (last 2 fields)
          n = NF-2; name=$3; for(i=4;i<=n;i++) name=name" "$i;
@@ -243,10 +260,10 @@ device nodes exist, drivers bind, and key identity registers are readable.
     printf "\nBus %s (%s):\n" "$busnum" "$bname"
 
     # Show a trimmed map (top MAX_LINES lines)
-    sudo i2cdetect -y -r "$busnum" 2>/dev/null | sed -n "1,${MAX_LINES}p"
+    i2cdetect -y -r "$busnum" 2>/dev/null | sed -n "1,${MAX_LINES}p"
 
     # Build a summary of detected vs in-use (UU) addresses
-    sudo i2cdetect -y -r "$busnum" 2>/dev/null | \
+    i2cdetect -y -r "$busnum" 2>/dev/null | \
     awk 'NR==1{next}
          {
            # Row label like "30:" -> base address
@@ -269,36 +286,111 @@ device nodes exist, drivers bind, and key identity registers are readable.
              for(a in used) printf " 0x%s", a; print ""
            }
          }'
-  done < <(sudo i2cdetect -l 2>/dev/null | sort -V)
+  done < <(i2cdetect -l 2>/dev/null | sort -V)
 #+END_SRC
 
-** ADS7142 (NTC ADC) — bus 7 @ 0x1f (presence)
+** ADS7142 NTC (bus 7 @ 0x1f)
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo i2cget -y 7 0x1f 2>/dev/null || echo "ADS7142 not responding at 0x1f on bus 7"
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
+  # Config (override with :var BUS=7 ADDR=0x1f)
+  BUS="${BUS:-7}"
+  ADDR="${ADDR:-0x1f}"
+
+  # Preconditions
+  command -v i2cget >/dev/null 2>&1 || { echo "ERROR: i2c-tools not installed"; exit 0; }
+  [ -e "/dev/i2c-$BUS" ] || { echo "ERROR: /dev/i2c-$BUS not present"; exit 0; }
+
+  # Read a single byte (no register). We only care that it responds and what it returns.
+  VAL="$(i2cget -y "$BUS" "$ADDR" 2>/dev/null || true)"
+
+  if [ -z "$VAL" ]; then
+    echo "ADS7142 not responding at $ADDR on bus $BUS"
+  else
+    # Normalize and show decimal too
+    VHEX="$(echo "$VAL" | tr 'A-F' 'a-f')"
+    VDEC=$(( 0x${VHEX#0x} ))
+    echo "ADS7142 responded: $VHEX (dec $VDEC) on bus $BUS @ $ADDR"
+  fi
 #+END_SRC
 
-*Note:* A return like =0xff= confirms bus/address responds. (Optional functional temp read lives outside this doc.)
+** HDC1080 (Temp/Humidity) — identity check (bus 7 @ 0x40)
 
-** HDC1080 (Temp/Humidity) — ID registers (word-swapped)
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
+  # Config (override with :var BUS=7 ADDR=0x40)
+  BUS="${BUS:-7}"
+  ADDR="${ADDR:-0x40}"
 
-- Manufacturer ID register =0xFE= → expects =0x5449= ("TI")
-- Device ID register =0xFF= → expects =0x1050= ("HDC1080")
+  # Expected values (word-swapped format)
+  EXPECT_MFG="0x4954"  # "TI" = 0x5449 swapped
+  EXPECT_DEV="0x5010"  # "HDC1080" = 0x1050 swapped
 
-#+BEGIN_SRC bash :results output :exports both
-  echo "Manufacturer ID (0xFE):"
-  sudo i2cget -y 7 0x40 0xfe w 2>/dev/null || true
-  echo "Device ID (0xFF):"
-  sudo i2cget -y 7 0x40 0xff w 2>/dev/null || true
+  # Preconditions
+  command -v i2cget >/dev/null 2>&1 || { echo "ERROR: i2c-tools not installed"; exit 0; }
+  [ -e "/dev/i2c-$BUS" ] || { echo "ERROR: /dev/i2c-$BUS not present"; exit 0; }
 
+  echo "Querying HDC1080 on bus $BUS @ $ADDR …"
+
+  # Read manufacturer and device IDs (word access)
+  MFG=$(i2cget -y "$BUS" "$ADDR" 0xFE w 2>/dev/null || true)
+  DEV=$(i2cget -y "$BUS" "$ADDR" 0xFF w 2>/dev/null || true)
+
+  if [ -z "$MFG" ] && [ -z "$DEV" ]; then
+    echo "FAIL: no response from HDC1080 at $ADDR on bus $BUS"
+    exit 0
+  fi
+
+  printf "Manufacturer ID (0xFE): %s\n" "${MFG:-N/A}"
+  printf "Device ID        (0xFF): %s\n" "${DEV:-N/A}"
+
+  # Normalize case
+  MFG=$(echo "$MFG" | tr 'A-F' 'a-f')
+  DEV=$(echo "$DEV" | tr 'A-F' 'a-f')
+
+  if [ "$MFG" = "$EXPECT_MFG" ]; then
+    echo "PASS: Manufacturer ID matches expected TI ($EXPECT_MFG)"
+  else
+    echo "WARN: Unexpected manufacturer ID (got $MFG, expected $EXPECT_MFG)"
+  fi
+
+  if [ "$DEV" = "$EXPECT_DEV" ]; then
+    echo "PASS: Device ID matches expected HDC1080 ($EXPECT_DEV)"
+  else
+    echo "WARN: Unexpected device ID (got $DEV, expected $EXPECT_DEV)"
+  fi
 #+END_SRC
 
-*Note:* =0x4954= and =0x5010=, which are byte-swapped word reads matching TI/HDC1080.
+** LIS2DE12 (Accelerometer) — WHO_AM_I check (0x0F → expects 0x33)
 
-** LIS2DE12 (Accel) — WHO_AM_I (0x0F → 0x33)
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
+  # Config (override with :var BUS=7 ADDR=0x18 REG=0x0F EXPECT=0x33)
+  BUS="${BUS:-7}"
+  ADDR="${ADDR:-0x18}"
+  REG="${REG:-0x0F}"
+  EXPECT="${EXPECT:-0x33}"
 
-#+BEGIN_SRC bash :results output :exports both
-  sudo i2cget -y 7 0x18 0x0f b 2>/dev/null || echo "LIS2DE12 WHO_AM_I read failed"
+  # Preconditions
+  command -v i2cget >/dev/null 2>&1 || { echo "ERROR: i2c-tools not installed"; exit 0; }
+  [ -e "/dev/i2c-$BUS" ] || { echo "ERROR: /dev/i2c-$BUS not present"; exit 0; }
+
+  echo "Checking LIS2DE12 WHO_AM_I (reg $REG) on bus $BUS @ $ADDR …"
+
+  # Read WHO_AM_I (single byte)
+  VAL=$(i2cget -y "$BUS" "$ADDR" "$REG" b 2>/dev/null || true)
+
+  if [ -z "$VAL" ]; then
+    echo "FAIL: LIS2DE12 not responding on bus $BUS @ $ADDR"
+    exit 0
+  fi
+
+  # Normalize case
+  VHEX=$(echo "$VAL" | tr 'A-F' 'a-f')
+  EHEX=$(echo "$EXPECT" | tr 'A-F' 'a-f')
+
+  if [ "$VHEX" = "$EHEX" ]; then
+    echo "PASS: LIS2DE12 WHO_AM_I = $VHEX (expected $EHEX)"
+  else
+    echo "WARN: Unexpected WHO_AM_I value (got $VHEX, expected $EHEX)"
+  fi
 #+END_SRC
 
 ** AT24CS01 (EEPROM + Unique ID) — dump (non-destructive)
