@@ -44,25 +44,6 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 * Global Kernel Footprint
 
-** dmesg — GPIO/UART/I²C/SPI/CAN/TPM
-
-#+BEGIN_SRC bash :results output :exports both
-  echo "--- ALIASES ---"
-  for f in /proc/device-tree/aliases/i2c* /proc/device-tree/aliases/serial* /proc/device-tree/aliases/spi* 2>/dev/null; do
-    [ -e "$f" ] && printf "%-9s -> %s\n" "$(basename "$f")" "$(tr -d '\0' <"$f")"
-  done
-
-  echo "--- I2C ---"
-  sudo i2cdetect -l
-
-  echo "--- SERIAL ---"
-  sudo dmesg -T | egrep -i "tty|serial" | tail -n 10
-  ls -l /dev/ttyTHS* /dev/ttyTCU* /dev/ttyAMA* 2>/dev/null
-
-  echo "--- SPI ---"
-  ls -l /dev/spidev* 2>/dev/null || true
-#+END_SRC
-
 ** Device tree aliases (quick sanity)
 
 #+BEGIN_SRC bash :results output :exports both
@@ -108,17 +89,6 @@ device nodes exist, drivers bind, and key identity registers are readable.
   fi
 #+END_SRC
 
-*** Optional: udev attributes for the RS-485 dongle
-
-#+BEGIN_SRC bash :results output :exports both
-  for n in /dev/ttyUSB*; do
-    echo "### $n"
-    udevadm info -q property -n "$n" | egrep "ID_VENDOR_ID|ID_MODEL_ID|DEVPATH"
-  done
-#+END_SRC
-
-*Evidence:* The bridge should enumerate as =/dev/ttyUSBx= and lsusb should show *0403:6015*.
-
 ** AX210 BT
 
 #+BEGIN_SRC bash :results output :exports both
@@ -134,11 +104,12 @@ device nodes exist, drivers bind, and key identity registers are readable.
 #+END_SRC
 
 ** M2 Card Matter
+(Matter M2 Card is in development now, so this field was leave in blank on purpose.)
 
 * CAN-BUS (visibility only)
 
 ** Kernel modules
-#+BEGIN_SRC bash :dir / :sudo yes :results output :exports both
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
   echo "=== Loading CAN kernel modules ==="
   for mod in can can_raw mttcan; do
     if lsmod | grep -qw "$mod"; then
@@ -160,6 +131,10 @@ device nodes exist, drivers bind, and key identity registers are readable.
   echo
   echo "=== Checking CAN interfaces ==="
   ip -details link show type can 2>/dev/null || echo "No CAN interfaces detected yet."
+
+  echo
+  echo "=== Turning on  can0 interface ==="
+  ip link set can0 up type can bitrate 1000000
 #+END_SRC
 
 ** Observe bus traffic (non-intrusive)
@@ -216,7 +191,7 @@ device nodes exist, drivers bind, and key identity registers are readable.
   else
     echo "[WARN] No frames observed in ${DUR}s (bus may be idle)."
     echo "      - If the interface is DOWN, bring it up with your desired bitrate, e.g.:"
-    echo "        sudo ip link set $IFACE up type can bitrate 500000"
+    echo "        sudo ip link set $IFACE up type can bitrate 1000000"
     echo "      - If using silent/loopback modes, ensure filters and mode are correct."
     echo "      - Check cabling/termination and that peers are transmitting."
   fi
@@ -230,7 +205,7 @@ device nodes exist, drivers bind, and key identity registers are readable.
 
 ** Inventory (I²C buses with quick map & summary)
 
-#+BEGIN_SRC bash :dir / :sudo yes :results output :exports both
+#+BEGIN_SRC bash :dir /sudo:: :results output :exports both
   # Readable I²C inventory + quick maps (non-intrusive, uses i2cdetect -r)
   # Tip: set MAX_LINES to control how many map lines to show (default: 12)
   MAX_LINES="${MAX_LINES:-12}"
@@ -295,15 +270,6 @@ device nodes exist, drivers bind, and key identity registers are readable.
            }
          }'
   done < <(sudo i2cdetect -l 2>/dev/null | sort -V)
-#+END_SRC
-
-#+BEGIN_SRC bash :results output :exports both
-  sudo i2cdetect -l 2>/dev/null || echo "i2c-tools not installed"
-  for BUS in {0..10}; do
-    [ -e "/dev/i2c-$BUS" ] || continue
-    echo "Bus $BUS map:"
-    sudo i2cdetect -y -r $BUS | sed -n '1,12p'
-  done
 #+END_SRC
 
 ** ADS7142 (NTC ADC) — bus 7 @ 0x1f (presence)
